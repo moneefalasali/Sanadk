@@ -47,7 +47,13 @@ class DashboardController extends Controller
             ));
         } elseif ($user->role === 'doctor') {
             $patients = $user->patients()->with(['vitalSigns', 'seizures'])->get();
-            return view('dashboards.doctor', compact('patients'));
+            $activePatientCount = $patients->filter(function ($patient) {
+                return $patient->seizures->whereNull('end_time')->count() > 0;
+            })->count();
+            $totalSeizures = $patients->sum(function ($patient) {
+                return $patient->seizures->count();
+            });
+            return view('dashboards.doctor', compact('patients', 'activePatientCount', 'totalSeizures'));
         } elseif ($user->role === 'family') {
             $familyPatients = $user->emergencyContacts()->where('status', 'accepted')->with('user.seizures', 'user.vitalSigns')->get()
                 ->pluck('user')
