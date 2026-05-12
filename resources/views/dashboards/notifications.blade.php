@@ -1,6 +1,30 @@
 <x-app-layout>
     <link rel="stylesheet" href="{{ asset('css/modern-ui.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="{{ asset('css/fontawesome.css') }}">
+
+    @php
+    function getNotificationColor($type) {
+        return match($type) {
+            'emergency' => 'bg-red-500',
+            'warning' => 'bg-orange-500',
+            'doctor_message' => 'bg-blue-500',
+            'medical_note' => 'bg-green-500',
+            'info' => 'bg-blue-500',
+            default => 'bg-gray-500'
+        };
+    }
+
+    function getNotificationIcon($type) {
+        return match($type) {
+            'emergency' => 'ambulance',
+            'warning' => 'exclamation-triangle',
+            'doctor_message' => 'user-md',
+            'medical_note' => 'notes-medical',
+            'info' => 'info-circle',
+            default => 'bell'
+        };
+    }
+    @endphp
 
     @include('components.header-nav', ['title' => 'التنبيهات', 'unreadNotifications' => $notifications->where('is_read', false)->count()])
 
@@ -97,7 +121,7 @@
         // Live device data update function
         async function updateLiveData() {
             try {
-                const response = await fetch('/devices/live-data');
+                const response = await fetch('{{ route('devices.live-data') }}', { cache: 'no-store' });
                 const data = await response.json();
 
                 if (data.success) {
@@ -125,26 +149,6 @@
             });
         });
     </script>
-
-    @php
-        function getNotificationColor($type) {
-            return match($type) {
-                'emergency' => 'bg-red-50 text-red-400',
-                'warning' => 'bg-orange-50 text-orange-400',
-                'info' => 'bg-blue-50 text-blue-400',
-                default => 'bg-gray-50 text-gray-400'
-            };
-        }
-
-        function getNotificationIcon($type) {
-            return match($type) {
-                'emergency' => 'ambulance',
-                'warning' => 'exclamation-triangle',
-                'info' => 'info-circle',
-                default => 'bell'
-            };
-        }
-    @endphp
 
     <!-- Bottom Navigation -->
     @include('components.bottom-nav', ['active' => ''])

@@ -144,6 +144,7 @@
                                 <div>
                                     <p class="small text-muted mb-0">النشاط الحالي</p>
                                     <p class="fw-bold mb-0" id="currentActivity">جاري التحليل...</p>
+                                    <p class="small text-muted mb-0" id="riskLevel">جاري التحليل...</p>
                                 </div>
                             </div>
                         </div>
@@ -426,7 +427,7 @@
         // Live device data update function
         async function fetchLiveDeviceData() {
             try {
-                const response = await fetch('{{ route("devices.live-data") }}');
+                const response = await fetch('{{ route("devices.live-data") }}', { cache: 'no-store' });
                 const data = await response.json();
 
                 if (data.success) {
@@ -455,7 +456,9 @@
             let score = 50;
             const heartRate = parseNumeric(data.heart_rate);
             const muscleTension = parseNumeric(data.muscle_tension);
-            const brainActivity = parseNumeric(data.brain_activity);
+            const brainAlpha = parseNumeric(data.brain_alpha);
+            const brainBeta = parseNumeric(data.brain_beta);
+            const brainActivity = data.brain_activity;
 
             if (heartRate !== null) {
                 score += (heartRate - 70) * 0.3;
@@ -463,8 +466,14 @@
             if (muscleTension !== null) {
                 score += (muscleTension - 50) * 0.25;
             }
-            if (brainActivity !== null) {
-                score += (brainActivity - 50) * 0.15;
+            if (brainAlpha !== null) {
+                score += (brainAlpha - 10) * 0.15;
+            }
+            if (brainBeta !== null) {
+                score += (brainBeta - 20) * 0.1;
+            }
+            if (brainActivity && brainActivity.toLowerCase() === 'abnormal') {
+                score += 8;
             }
 
             return Math.round(Math.max(10, Math.min(95, score)));

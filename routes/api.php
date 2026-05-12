@@ -21,3 +21,5 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 
 Route::post('/vitals/update', [ApiController::class, 'updateVitals']);
 Route::get('/patient/{id}/status', [ApiController::class, 'getPatientStatus']);
+Route::post('/search-hospitals-ai', [ApiController::class, 'searchHospitalsAI']);
+Route::get('/hospitals/nearby', [ApiController::class, 'getNearbyHospitals']);

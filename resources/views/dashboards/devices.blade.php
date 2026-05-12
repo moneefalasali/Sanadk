@@ -1,6 +1,6 @@
 <x-app-layout>
     <link rel="stylesheet" href="{{ asset('css/modern-ui.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="{{ asset('css/fontawesome.css') }}">
 
     @include('components.header-nav', ['title' => 'الأجهزة المتصلة'])
 
@@ -67,10 +67,18 @@
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div class="space-y-4">
                 @forelse($devices as $device)
+                    @php
+                        $deviceIconClass = match($device->type) {
+                            'eeg' => 'fa-wave-square',
+                            'ecg' => 'fa-heartbeat',
+                            'emg' => 'fa-bolt',
+                            default => 'fa-microchip',
+                        };
+                    @endphp
                     <div class="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 hover:shadow-md transition">
                         <div class="flex flex-col sm:flex-row items-center gap-5">
-                            <div class="w-24 h-24 bg-gray-50 rounded-3xl flex items-center justify-center p-3">
-                                <img src="{{ $device->icon_url }}" class="w-full max-w-[56px] opacity-80" alt="{{ $device->type_label }}">
+                            <div class="w-24 h-24 bg-gray-50 rounded-3xl flex items-center justify-center p-3 text-blue-600">
+                                <i class="fas {{ $deviceIconClass }} fa-3x"></i>
                             </div>
                             <div class="flex-1">
                                 <div class="flex items-center justify-between gap-3 mb-3">
@@ -422,8 +430,8 @@
             let html = `
                 <div class="mb-6">
                     <div class="flex items-center gap-4 mb-4">
-                        <div class="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center">
-                            <img src="${getDeviceIcon(device.type)}" class="w-8 h-8 opacity-80" alt="${device.type}">
+                        <div class="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center text-blue-600">
+                            ${getDeviceIconHTML(device.type)}
                         </div>
                         <div>
                             <h4 class="font-bold text-lg">${device.name}</h4>
@@ -474,13 +482,14 @@
             document.getElementById('modalContent').innerHTML = html;
         }
 
-        function getDeviceIcon(type) {
+        function getDeviceIconHTML(type) {
             const icons = {
-                'eeg': 'https://cdn-icons-png.flaticon.com/512/3022/3022566.png',
-                'ecg': 'https://cdn-icons-png.flaticon.com/512/3179/3179062.png',
-                'emg': 'https://cdn-icons-png.flaticon.com/512/1390/1390324.png'
+                'eeg': 'fa-wave-square',
+                'ecg': 'fa-heartbeat',
+                'emg': 'fa-bolt'
             };
-            return icons[type] || 'https://cdn-icons-png.flaticon.com/512/3602/3602976.png';
+            const iconClass = icons[type] || 'fa-microchip';
+            return `<i class="fas ${iconClass} fa-2x text-blue-600"></i>`;
         }
 
         function getDataLabel(key, deviceType) {

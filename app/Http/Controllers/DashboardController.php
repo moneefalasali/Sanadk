@@ -53,7 +53,16 @@ class DashboardController extends Controller
             $totalSeizures = $patients->sum(function ($patient) {
                 return $patient->seizures->count();
             });
-            return view('dashboards.doctor', compact('patients', 'activePatientCount', 'totalSeizures'));
+            $predictionRate = $totalSeizures > 0 ? round($patients->sum(function ($patient) {
+                return $patient->seizures->where('is_predicted', true)->count();
+            }) / $totalSeizures * 100, 1) : 0;
+            $durations = $patients->flatMap(function ($patient) {
+                return $patient->seizures->whereNotNull('end_time')->map(function ($seizure) {
+                    return $seizure->end_time->diffInMinutes($seizure->start_time);
+                });
+            })->filter()->all();
+            $avgSeizureDuration = count($durations) ? round(array_sum($durations) / count($durations), 1) : 0;
+            return view('dashboards.doctor', compact('patients', 'activePatientCount', 'totalSeizures', 'predictionRate', 'avgSeizureDuration'));
         } elseif ($user->role === 'family') {
             $familyPatients = $user->emergencyContacts()->where('status', 'accepted')->with('user.seizures', 'user.vitalSigns')->get()
                 ->pluck('user')
@@ -452,7 +461,11 @@ class DashboardController extends Controller
                     if (isset($data['heart_rate'])) $liveData['heart_rate'] = $data['heart_rate'];
                     if (isset($data['blood_pressure_systolic'])) $liveData['blood_pressure_systolic'] = $data['blood_pressure_systolic'];
                     if (isset($data['blood_pressure_diastolic'])) $liveData['blood_pressure_diastolic'] = $data['blood_pressure_diastolic'];
-                    if (isset($data['oxygen_level'])) $liveData['oxygen_level'] = $data['oxygen_level'];
+                    if (isset($data['oxygen_level'])) {
+                        $liveData['oxygen_level'] = $data['oxygen_level'];
+                    } elseif (isset($data['oxygen_saturation'])) {
+                        $liveData['oxygen_level'] = $data['oxygen_saturation'];
+                    }
                     if (isset($data['temperature'])) $liveData['temperature'] = $data['temperature'];
                 } elseif ($device->type === 'emg') {
                     if (isset($data['tension'])) {
@@ -461,8 +474,16 @@ class DashboardController extends Controller
                     if (isset($data['nerve_signals'])) {
                         $liveData['nerve_signals'] = $data['nerve_signals'];
                     }
-                } elseif ($device->type === 'eeg' && isset($data['activity_level'])) {
-                    $liveData['brain_activity'] = $data['activity_level'];
+                } elseif ($device->type === 'eeg') {
+                    if (isset($data['activity_level'])) {
+                        $liveData['brain_activity'] = $data['activity_level'];
+                    }
+                    if (isset($data['alpha'])) {
+                        $liveData['brain_alpha'] = $data['alpha'];
+                    }
+                    if (isset($data['beta'])) {
+                        $liveData['brain_beta'] = $data['beta'];
+                    }
                 }
 
                 if (!$liveData['last_updated'] || $device->updated_at > $liveData['last_updated']) {
@@ -471,7 +492,10 @@ class DashboardController extends Controller
             }
         }
 
-        return response()->json($liveData);
+        return response()->json($liveData)
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', '0');
     }
 
     public function analyzeDevices(Request $request)
@@ -563,19 +587,66 @@ class DashboardController extends Controller
     public function map()
     {
         $user = Auth::user();
-        $user->load('seizures');
-        $latestSeizure = $user->seizures->sortByDesc('start_time')->first();
+        $patients = collect();
 
-        $patients = collect([[
-            'id' => $user->id,
-            'name' => $user->name,
-            'phone' => $user->phone,
-            'address' => $user->address,
-            'latitude' => $latestSeizure?->latitude,
-            'longitude' => $latestSeizure?->longitude,
-            'status' => $latestSeizure && !$latestSeizure->end_time ? 'alert' : 'stable',
-            'seizures' => $user->seizures,
-        ]]);
+        if ($user->role === 'doctor') {
+            // Doctor sees all their patients
+            $patients = PatientDoctor::where('doctor_id', $user->id)
+                ->with(['patient.seizures', 'patient.vitalSigns'])
+                ->get()
+                ->map(function ($relation) {
+                    $patient = $relation->patient;
+                    if (!$patient) return null;
+
+                    $latestSeizure = $patient->seizures->sortByDesc('start_time')->first();
+                    return [
+                        'id' => $patient->id,
+                        'name' => $patient->name,
+                        'phone' => $patient->phone,
+                        'address' => $patient->address,
+                        'latitude' => $latestSeizure?->latitude ?? 24.7136,
+                        'longitude' => $latestSeizure?->longitude ?? 46.6753,
+                        'status' => $latestSeizure && !$latestSeizure->end_time ? 'alert' : 'stable',
+                        'seizures' => $patient->seizures,
+                    ];
+                })->filter();
+        } elseif ($user->role === 'family') {
+            // Family sees their connected patients
+            $patients = EmergencyContact::where('status', 'accepted')
+                ->where('contact_user_id', $user->id)
+                ->with(['user.seizures', 'user.vitalSigns'])
+                ->get()
+                ->map(function ($contact) {
+                    $patient = $contact->user;
+                    if (!$patient) return null;
+
+                    $latestSeizure = $patient->seizures->sortByDesc('start_time')->first();
+                    return [
+                        'id' => $patient->id,
+                        'name' => $patient->name,
+                        'phone' => $patient->phone,
+                        'address' => $patient->address,
+                        'latitude' => $latestSeizure?->latitude ?? 24.7136,
+                        'longitude' => $latestSeizure?->longitude ?? 46.6753,
+                        'status' => $latestSeizure && !$latestSeizure->end_time ? 'alert' : 'stable',
+                        'seizures' => $patient->seizures,
+                    ];
+                })->filter();
+        } else {
+            // Patient sees their own data
+            $user->load('seizures');
+            $latestSeizure = $user->seizures->sortByDesc('start_time')->first();
+            $patients = collect([[
+                'id' => $user->id,
+                'name' => $user->name,
+                'phone' => $user->phone,
+                'address' => $user->address,
+                'latitude' => $latestSeizure?->latitude ?? 24.7136,
+                'longitude' => $latestSeizure?->longitude ?? 46.6753,
+                'status' => $latestSeizure && !$latestSeizure->end_time ? 'alert' : 'stable',
+                'seizures' => $user->seizures,
+            ]]);
+        }
 
         $unreadNotifications = AppNotification::where('user_id', $user->id)->where('is_read', false)->count();
 
@@ -892,16 +963,124 @@ class DashboardController extends Controller
         };
     }
 
-    private function getRiskAdviceText($riskScore)
+    public function sendPatientNotification(Request $request, $patientId)
     {
-        if ($riskScore >= 70) {
-            return 'احرص على الراحة وتواصل مع الطبيب إذا استمر الخطر مرتفعًا.';
+        $request->validate([
+            'message' => 'required|string|max:500',
+        ]);
+
+        $doctor = Auth::user();
+        $patient = User::findOrFail($patientId);
+
+        // التحقق من أن الطبيب مرتبط بالمريض
+        if (!$doctor->patients()->where('patient_id', $patientId)->exists()) {
+            return response()->json(['success' => false, 'message' => 'غير مصرح لك بإرسال إشعارات لهذا المريض']);
         }
 
-        if ($riskScore >= 40) {
-            return 'احرص على تناول الأدوية وراحة إضافية، وتابع حالتك خلال اليوم.';
+        // إنشاء إشعار
+        AppNotification::create([
+            'user_id' => $patientId,
+            'title' => 'إشعار من الطبيب',
+            'message' => $request->message,
+            'type' => 'doctor_message',
+            'is_read' => false,
+        ]);
+
+        return response()->json(['success' => true, 'message' => 'تم إرسال الإشعار بنجاح']);
+    }
+
+    public function addPatientNote(Request $request, $patientId)
+    {
+        $request->validate([
+            'note' => 'required|string|max:1000',
+        ]);
+
+        $doctor = Auth::user();
+        $patient = User::findOrFail($patientId);
+
+        // التحقق من أن الطبيب مرتبط بالمريض
+        if (!$doctor->patients()->where('patient_id', $patientId)->exists()) {
+            return response()->json(['success' => false, 'message' => 'غير مصرح لك بإضافة ملاحظات لهذا المريض']);
         }
 
-        return 'الحالة مستقرة حالياً، حافظ على نمط صحي وتابع إدخال بياناتك اليومية.';
+        // إضافة الملاحظة كإشعار أو حفظ في مكان آخر
+        // يمكن حفظها في جدول منفصل أو كإشعار
+        AppNotification::create([
+            'user_id' => $patientId,
+            'title' => 'ملاحظة طبية',
+            'message' => $request->note,
+            'type' => 'medical_note',
+            'is_read' => false,
+        ]);
+
+        return response()->json(['success' => true, 'message' => 'تم إضافة الملاحظة بنجاح']);
+    }
+
+    public function patientDetails($patientId)
+    {
+        $user = Auth::user();
+        $patient = User::findOrFail($patientId);
+
+        // التحقق من الصلاحيات
+        if ($user->role === 'doctor') {
+            if (!$user->patients()->where('patient_id', $patientId)->exists()) {
+                abort(403, 'غير مصرح لك بعرض تفاصيل هذا المريض');
+            }
+        } elseif ($user->role === 'family') {
+            if (!EmergencyContact::where('contact_user_id', $user->id)
+                                ->where('user_id', $patientId)
+                                ->where('status', 'accepted')
+                                ->exists()) {
+                abort(403, 'غير مصرح لك بعرض تفاصيل هذا المريض');
+            }
+        } elseif ($user->role === 'patient') {
+            if ($user->id !== $patientId) {
+                abort(403, 'يمكنك فقط عرض تفاصيل حسابك الخاص');
+            }
+        } else {
+            abort(403, 'غير مصرح لك بعرض تفاصيل المرضى');
+        }
+
+        // جمع بيانات المريض
+        $patient->load(['seizures', 'vitalSigns', 'devices', 'dailyEntries']);
+
+        $latestSeizure = $patient->seizures->sortByDesc('start_time')->first();
+        $latestVitals = $patient->vitalSigns->sortByDesc('created_at')->first();
+        $totalSeizures = $patient->seizures->count();
+        $activeSeizure = $patient->seizures->whereNull('end_time')->first();
+
+        $seizureStats = [
+            'total' => $totalSeizures,
+            'this_month' => $patient->seizures->where('created_at', '>=', now()->startOfMonth())->count(),
+            'this_week' => $patient->seizures->where('created_at', '>=', now()->startOfWeek())->count(),
+            'average_duration' => $patient->seizures->whereNotNull('end_time')->avg(function ($seizure) {
+                return $seizure->end_time->diffInMinutes($seizure->start_time);
+            }) ?? 0,
+        ];
+
+        $vitalsStats = [
+            'avg_heart_rate' => $patient->vitalSigns->avg('heart_rate') ?? 0,
+            'avg_oxygen' => $patient->vitalSigns->avg('oxygen_level') ?? 0,
+            'avg_temperature' => $patient->vitalSigns->avg('temperature') ?? 0,
+            'latest_heart_rate' => $latestVitals->heart_rate ?? null,
+            'latest_oxygen' => $latestVitals->oxygen_level ?? null,
+            'latest_temperature' => $latestVitals->temperature ?? null,
+        ];
+
+        $recentSeizures = $patient->seizures->sortByDesc('start_time')->take(10);
+        $recentVitals = $patient->vitalSigns->sortByDesc('created_at')->take(10);
+        $recentEntries = $patient->dailyEntries->sortByDesc('created_at')->take(10);
+
+        return view('dashboards.patient-details', compact(
+            'patient',
+            'latestSeizure',
+            'latestVitals',
+            'activeSeizure',
+            'seizureStats',
+            'vitalsStats',
+            'recentSeizures',
+            'recentVitals',
+            'recentEntries'
+        ));
     }
 }

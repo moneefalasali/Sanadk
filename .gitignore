@@ -17,3 +17,17 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
+
+# Production build files (regenerate with npm run build)
+/public/css/app.css
+/public/css/fontawesome.css
+
+# Development files
+*.log
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

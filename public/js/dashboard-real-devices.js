@@ -47,8 +47,10 @@ function loadUserProfile() {
     });
 
     if (user.full_name) {
-        const avatarText = user.full_name.split(' ').map(n => n[0]).join('').toUpperCase();
-        document.getElementById('userAvatar').src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.full_name)}&background=4A90E2&color=fff&rounded=true`;
+        const avatarText = user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+        const avatarSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128"><rect width="100%" height="100%" fill="#4A90E2"/><text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="60">${avatarText}</text></svg>`;
+        const encodedSvg = window.btoa(unescape(encodeURIComponent(avatarSvg)));
+        document.getElementById('userAvatar').src = `data:image/svg+xml;base64,${encodedSvg}`;
     }
 }
 

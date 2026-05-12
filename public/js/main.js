@@ -1,33 +1,202 @@
 /**
  * SANADK - Seizure Detection System
- * Main Frontend JavaScript
+ * Main Frontend JavaScript - Production Ready
  */
 
 // ============================================================================
-// SOCKET.IO CONNECTION
+// SERVICE WORKER REGISTRATION
 // ============================================================================
 
-const socket = io({
-    reconnection: true,
-    reconnectionDelay: 1000,
-    reconnectionDelayMax: 5000,
-    reconnectionAttempts: 5
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+            .then(registration => {
+                console.log('SW registered: ', registration);
+
+                // Handle updates
+                registration.addEventListener('updatefound', () => {
+                    const newWorker = registration.installing;
+                    if (newWorker) {
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                // New version available
+                                showUpdateNotification();
+                            }
+                        });
+                    }
+                });
+            })
+            .catch(registrationError => {
+                console.log('SW registration failed: ', registrationError);
+            });
+    });
+}
+
+// Update notification
+function showUpdateNotification() {
+    const notification = document.createElement('div');
+    notification.className = 'fixed top-4 left-4 right-4 bg-blue-600 text-white p-4 rounded-lg shadow-lg z-50';
+    notification.innerHTML = `
+        <div class="flex items-center justify-between">
+            <div>
+                <h4 class="font-semibold">تحديث متاح</h4>
+                <p class="text-sm">تم تحديث التطبيق. أعد تحميل الصفحة للحصول على أحدث الميزات.</p>
+            </div>
+            <button onclick="window.location.reload()" class="bg-white text-blue-600 px-4 py-2 rounded font-medium hover:bg-gray-100 transition">
+                إعادة التحميل
+            </button>
+        </div>
+    `;
+    document.body.appendChild(notification);
+
+    // Auto-hide after 10 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 10000);
+}
+
+// ============================================================================
+// NETWORK STATUS MONITORING
+// ============================================================================
+
+let networkStatus = navigator.onLine;
+window.addEventListener('online', handleNetworkChange);
+window.addEventListener('offline', handleNetworkChange);
+
+function handleNetworkChange() {
+    const newStatus = navigator.onLine;
+    if (newStatus !== networkStatus) {
+        networkStatus = newStatus;
+        showNetworkStatus();
+    }
+}
+
+function showNetworkStatus() {
+    // Remove existing notification
+    const existing = document.querySelector('.network-status');
+    if (existing) existing.remove();
+
+    const status = document.createElement('div');
+    status.className = `network-status fixed top-20 left-4 right-4 p-3 rounded-lg shadow-lg z-40 ${
+        networkStatus ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+    }`;
+
+    status.innerHTML = `
+        <div class="flex items-center gap-2">
+            <i class="fas ${networkStatus ? 'fa-wifi' : 'fa-wifi-slash'}"></i>
+            <span>${networkStatus ? 'متصل بالإنترنت' : 'غير متصل بالإنترنت'}</span>
+        </div>
+    `;
+
+    document.body.appendChild(status);
+
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+        if (status.parentNode) {
+            status.remove();
+        }
+    }, 3000);
+}
+
+// ============================================================================
+// ERROR HANDLING
+// ============================================================================
+
+window.addEventListener('error', (event) => {
+    console.error('Global error:', event.error);
+    // Don't show error notifications in production unless critical
 });
 
-socket.on('connect', () => {
-    console.log('Connected to SANADK server');
-    showNotification('متصل بنظام SANADK', 'success');
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('Unhandled promise rejection:', event.reason);
+    // Handle unhandled promise rejections
 });
 
-socket.on('disconnect', () => {
-    console.log('Disconnected from server');
-    showNotification('قطع الاتصال بالنظام', 'warning');
-});
+// ============================================================================
+// PERFORMANCE MONITORING
+// ============================================================================
 
-socket.on('error', (error) => {
-    console.error('Socket error:', error);
-    showNotification('خطأ في الاتصال: ' + error.message, 'error');
-});
+if ('performance' in window && 'PerformanceObserver' in window) {
+    try {
+        // Monitor long tasks
+        const observer = new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) {
+                if (entry.duration > 50) { // Tasks longer than 50ms
+                    console.warn('Long task detected:', entry);
+                }
+            }
+        });
+        observer.observe({ entryTypes: ['longtask'] });
+    } catch (e) {
+        console.warn('Performance monitoring not supported');
+    }
+}
+
+// ============================================================================
+// SAFE STORAGE ACCESS
+// ============================================================================
+
+function safeLocalStorage() {
+    try {
+        if (typeof Storage === 'undefined') {
+            return null;
+        }
+        // Test storage access
+        localStorage.setItem('test', 'test');
+        localStorage.removeItem('test');
+        return localStorage;
+    } catch (e) {
+        console.warn('localStorage not available:', e);
+        return null;
+    }
+}
+
+function safeSessionStorage() {
+    try {
+        if (typeof Storage === 'undefined') {
+            return null;
+        }
+        sessionStorage.setItem('test', 'test');
+        sessionStorage.removeItem('test');
+        return sessionStorage;
+    } catch (e) {
+        console.warn('sessionStorage not available:', e);
+        return null;
+    }
+}
+
+// ============================================================================
+// SOCKET.IO CONNECTION (Optional)
+// ============================================================================
+
+// Check if Socket.IO is available
+if (typeof io !== 'undefined') {
+    const socket = io({
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        reconnectionAttempts: 5
+    });
+
+    socket.on('connect', () => {
+        console.log('Connected to SANADK server');
+        showNotification('متصل بنظام SANADK', 'success');
+    });
+
+    socket.on('disconnect', () => {
+        console.log('Disconnected from server');
+        showNotification('قطع الاتصال بالنظام', 'warning');
+    });
+
+    socket.on('error', (error) => {
+        console.error('Socket error:', error);
+        showNotification('خطأ في الاتصال: ' + error.message, 'error');
+    });
+} else {
+    console.warn('Socket.IO not available - real-time features disabled');
+}
 
 // ============================================================================
 // AUTHENTICATION
@@ -39,361 +208,84 @@ let authToken = null;
 // Check if user is already logged in
 document.addEventListener('DOMContentLoaded', () => {
     // Try both 'access_token' and 'authToken' for backward compatibility
-    const savedToken = localStorage.getItem('access_token') || localStorage.getItem('authToken');
-    const savedUser = localStorage.getItem('currentUser');
-    
-    if (savedToken && savedUser) {
-        authToken = savedToken;
-        currentUser = JSON.parse(savedUser);
-        updateUIForLoggedInUser();
+    const storage = safeLocalStorage();
+    if (storage) {
+        const savedToken = storage.getItem('access_token') || storage.getItem('authToken');
+        const savedUser = storage.getItem('currentUser');
+
+        if (savedToken && savedUser) {
+            authToken = savedToken;
+            currentUser = JSON.parse(savedUser);
+            updateUIForLoggedInUser();
+        }
     }
 });
 
-function showLoginModal() {
-    document.getElementById('loginModal').style.display = 'block';
-}
-
-function closeLoginModal() {
-    document.getElementById('loginModal').style.display = 'none';
-}
-
-function showRegisterModal() {
-    document.getElementById('registerModal').style.display = 'block';
-}
-
-function closeRegisterModal() {
-    document.getElementById('registerModal').style.display = 'none';
-}
-
-async function loginUser(username, password) {
-    try {
-        const response = await fetch('/api/auth/login', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ username, password })
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            showNotification(error.error || 'فشل الدخول', 'error');
-            return null;
-        }
-
-        const data = await response.json();
-        authToken = data.access_token;
-        currentUser = {
-            id: data.user_id,
-            username: data.username,
-            email: data.email,
-            role: data.role,
-            full_name: data.full_name || data.username
-        };
-
-        localStorage.setItem('access_token', authToken);
-        localStorage.setItem('authToken', authToken);
-        localStorage.setItem('currentUser', JSON.stringify(currentUser));
-        updateUIForLoggedInUser();
-
-        if (socket.connected) {
-            socket.emit('user_connected', {
-                user_id: currentUser.id,
-                role: currentUser.role
-            });
-        }
-
-        return currentUser;
-    } catch (error) {
-        console.error('Login error:', error);
-        showNotification('خطأ في الدخول', 'error');
-        return null;
-    }
-}
-
-// Handle login form submission
-const loginForm = document.getElementById('loginForm');
-if (loginForm) {
-    loginForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        const username = document.getElementById('loginUsername').value;
-        const password = document.getElementById('loginPassword').value;
-        
-        const user = await loginUser(username, password);
-        if (user) {
-            closeLoginModal();
-            showNotification('تم الدخول بنجاح', 'success');
-            redirectBasedOnRole(user.role);
-        }
-    });
-}
-
-// Handle register form submission
-const registerForm = document.getElementById('registerForm');
-if (registerForm) {
-    registerForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        const username = document.getElementById('registerUsername').value;
-        const full_name = document.getElementById('registerFullName').value;
-        const email = document.getElementById('registerEmail').value;
-        const password = document.getElementById('registerPassword').value;
-        const role = document.getElementById('registerRole').value;
-        
-        try {
-            const response = await fetch('/api/auth/register', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ username, full_name, email, password, role })
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                showNotification('تم التسجيل بنجاح. جاري تسجيل الدخول تلقائياً...', 'success');
-                closeRegisterModal();
-                registerForm.reset();
-
-                const user = await loginUser(username, password);
-                if (user) {
-                    redirectBasedOnRole(user.role);
-                } else {
-                    showLoginModal();
-                }
-            } else {
-                const error = await response.json();
-                showNotification(error.error || 'فشل التسجيل', 'error');
-            }
-        } catch (error) {
-            console.error('Register error:', error);
-            showNotification('خطأ في التسجيل', 'error');
-        }
-    });
-}
-
-function updateUIForLoggedInUser() {
-    const authButtons = document.querySelector('.auth-buttons');
-    if (authButtons && currentUser) {
-        authButtons.innerHTML = `
-            <div class="user-menu">
-                <span class="user-name">${currentUser.full_name || currentUser.username}</span>
-                <button class="btn btn-secondary" onclick="logout()">تسجيل الخروج</button>
-            </div>
-        `;
-    }
-}
-
-function logout() {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('currentUser');
-    authToken = null;
-    currentUser = null;
-    socket.disconnect();
-    location.reload();
-}
-
-function redirectBasedOnRole(role) {
-    switch(role) {
-        case 'patient':
-            window.location.href = '/patient-dashboard';
-            break;
-        case 'doctor':
-            window.location.href = '/doctor-dashboard';
-            break;
-        case 'admin':
-            window.location.href = '/admin-dashboard';
-            break;
-        case 'family':
-            window.location.href = '/family-dashboard';
-            break;
-        default:
-            window.location.href = '/';
-    }
-}
-
 // ============================================================================
-// NOTIFICATIONS
+// NOTIFICATION SYSTEM
 // ============================================================================
 
 function showNotification(message, type = 'info') {
-    const notificationDiv = document.createElement('div');
-    notificationDiv.className = `notification notification-${type}`;
-    notificationDiv.textContent = message;
-    
-    document.body.appendChild(notificationDiv);
-    
-    // Animate in
+    const notification = document.createElement('div');
+    notification.className = `fixed top-4 left-4 right-4 p-4 rounded-lg shadow-lg z-40 ${
+        type === 'success' ? 'bg-green-600 text-white' :
+        type === 'error' ? 'bg-red-600 text-white' :
+        type === 'warning' ? 'bg-yellow-600 text-white' :
+        'bg-blue-600 text-white'
+    }`;
+
+    notification.innerHTML = `
+        <div class="flex items-center gap-2">
+            <i class="fas ${
+                type === 'success' ? 'fa-check-circle' :
+                type === 'error' ? 'fa-exclamation-triangle' :
+                type === 'warning' ? 'fa-exclamation-triangle' :
+                'fa-info-circle'
+            }"></i>
+            <span>${message}</span>
+        </div>
+    `;
+
+    document.body.appendChild(notification);
+
+    // Auto-hide after 5 seconds
     setTimeout(() => {
-        notificationDiv.classList.add('show');
-    }, 100);
-    
-    // Remove after 5 seconds
-    setTimeout(() => {
-        notificationDiv.classList.remove('show');
-        setTimeout(() => {
-            notificationDiv.remove();
-        }, 300);
+        if (notification.parentNode) {
+            notification.remove();
+        }
     }, 5000);
 }
 
 // ============================================================================
-// SOCKET.IO EVENT HANDLERS
+// UI UPDATE FUNCTIONS
 // ============================================================================
 
-// Handle real-time data updates
-socket.on('eeg_data_update', (data) => {
-    console.log('EEG data received:', data);
-    updateEEGChart(data);
-});
-
-socket.on('emg_data_update', (data) => {
-    console.log('EMG data received:', data);
-    updateEMGChart(data);
-});
-
-socket.on('hrv_data_update', (data) => {
-    console.log('HRV data received:', data);
-    updateHRVChart(data);
-});
-
-// Handle alerts
-socket.on('alert_notification', (alert) => {
-    console.log('Alert received:', alert);
-    showAlertNotification(alert);
-});
-
-// Handle device status
-socket.on('device_status', (status) => {
-    console.log('Device status:', status);
-    updateDeviceStatus(status);
-});
-
-// ============================================================================
-// CHART FUNCTIONS (Placeholder)
-// ============================================================================
-
-function updateEEGChart(data) {
-    // TODO: Update EEG chart with real-time data
-    console.log('Updating EEG chart with:', data);
-}
-
-function updateEMGChart(data) {
-    // TODO: Update EMG chart with real-time data
-    console.log('Updating EMG chart with:', data);
-}
-
-function updateHRVChart(data) {
-    // TODO: Update HRV chart with real-time data
-    console.log('Updating HRV chart with:', data);
-}
-
-function updateDeviceStatus(status) {
-    // TODO: Update device status display
-    console.log('Updating device status:', status);
-}
-
-// ============================================================================
-// ALERT HANDLING
-// ============================================================================
-
-function showAlertNotification(alert) {
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert-notification alert-${alert.severity}`;
-    alertDiv.innerHTML = `
-        <div class="alert-header">
-            <h3>${alert.title}</h3>
-            <button class="alert-close" onclick="this.parentElement.parentElement.remove()">×</button>
-        </div>
-        <div class="alert-body">
-            <p>${alert.message}</p>
-            ${alert.location ? `<p>الموقع: ${alert.location}</p>` : ''}
-            <p class="alert-time">${new Date(alert.timestamp).toLocaleString('ar-SA')}</p>
-        </div>
-    `;
-    
-    document.body.appendChild(alertDiv);
-    
-    // Play alert sound if critical
-    if (alert.severity === 'critical') {
-        playAlertSound();
-    }
-    
-    // Auto-remove after 10 seconds
-    setTimeout(() => {
-        alertDiv.remove();
-    }, 10000);
-}
-
-function playAlertSound() {
-    // TODO: Play alert sound for critical alerts
-    console.log('Playing alert sound');
-}
-
-// ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
-
-function scrollToSection(sectionId) {
-    const section = document.getElementById(sectionId);
-    if (section) {
-        section.scrollIntoView({ behavior: 'smooth' });
-    }
-}
-
-// Close modals when clicking outside
-window.onclick = function(event) {
-    const loginModal = document.getElementById('loginModal');
-    const registerModal = document.getElementById('registerModal');
-    
-    if (event.target === loginModal) {
-        loginModal.style.display = 'none';
-    }
-    if (event.target === registerModal) {
-        registerModal.style.display = 'none';
-    }
-}
-
-// ============================================================================
-// API HELPER FUNCTIONS
-// ============================================================================
-
-async function apiCall(endpoint, method = 'GET', data = null) {
-    const options = {
-        method,
-        headers: {
-            'Content-Type': 'application/json'
+function updateUIForLoggedInUser() {
+    // Update UI elements for logged in user
+    const userElements = document.querySelectorAll('[data-user-name]');
+    userElements.forEach(el => {
+        if (currentUser && currentUser.name) {
+            el.textContent = currentUser.name;
         }
-    };
-    
-    if (authToken) {
-        options.headers['Authorization'] = `Bearer ${authToken}`;
-    }
-    
-    if (data) {
-        options.body = JSON.stringify(data);
-    }
-    
-    try {
-        const response = await fetch(endpoint, options);
-        
-        if (response.status === 401) {
-            // Token expired
-            logout();
-            return null;
-        }
-        
-        return await response.json();
-    } catch (error) {
-        console.error('API call error:', error);
-        return null;
-    }
+    });
+
+    // Show/hide elements based on authentication
+    const authRequired = document.querySelectorAll('[data-auth-required]');
+    const authHidden = document.querySelectorAll('[data-auth-hidden]');
+
+    authRequired.forEach(el => el.style.display = currentUser ? 'block' : 'none');
+    authHidden.forEach(el => el.style.display = currentUser ? 'none' : 'block');
 }
 
 // ============================================================================
-// INITIALIZATION
+// EXPORT UTILITIES
 // ============================================================================
 
-console.log('SANADK Frontend loaded successfully');
+window.AppUtils = {
+    storage: safeLocalStorage(),
+    sessionStorage: safeSessionStorage(),
+    isOnline: () => navigator.onLine,
+    showNetworkStatus,
+    showNotification,
+    showUpdateNotification
+};

@@ -150,6 +150,14 @@ class OpenAIService
         }
     }
 
+    /**
+     * Search nearby hospitals (alias for findNearbyHospitals)
+     */
+    public function searchNearbyHospitals($latitude, $longitude, $location = null)
+    {
+        return $this->findNearbyHospitals($latitude, $longitude);
+    }
+
     private function buildActivityPrompt(array $deviceData, array $patientHistory = [])
     {
         $eeg = $deviceData['eeg'] ?? [];
@@ -305,11 +313,17 @@ class OpenAIService
         // Parse hospitals information
         $lines = explode("\n", $hospitalsInfo);
         $hospitals = [];
+        $baseLat = 24.7136; // Riyadh latitude
+        $baseLng = 46.6753; // Riyadh longitude
 
         foreach ($lines as $line) {
             if (preg_match('/مستشفى (.+)/', $line, $matches)) {
+                // Add some random offset for different hospitals
+                $offset = count($hospitals) * 0.01;
                 $hospitals[] = [
                     'name' => trim($matches[1]),
+                    'lat' => $baseLat + $offset,
+                    'lng' => $baseLng + $offset,
                     'distance' => 'غير محدد',
                     'eta' => 'غير محدد',
                     'address' => 'الرياض، المملكة العربية السعودية'

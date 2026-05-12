@@ -1,6 +1,6 @@
 <x-app-layout>
     <link rel="stylesheet" href="{{ asset('css/modern-ui.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="{{ asset('css/fontawesome.css') }}">
 
     @include('components.header-nav', ['title' => 'الإعدادات'])
 
@@ -11,8 +11,18 @@
         </div>
 
         <!-- Profile Card -->
+        @php
+            $settingsNameParts = preg_split('/\s+/', trim(Auth::user()->name));
+            $settingsInitials = '';
+            foreach ($settingsNameParts as $part) {
+                $settingsInitials .= mb_substr($part, 0, 1);
+            }
+            $settingsInitials = mb_strtoupper(mb_substr($settingsInitials, 0, 2));
+        @endphp
         <div class="bg-white p-6 rounded-[32px] shadow-sm flex items-center gap-4 mb-8">
-            <img src="https://ui-avatars.com/api/?name={{ Auth::user()->name }}&background=random" class="w-16 h-16 rounded-2xl">
+            <div class="w-16 h-16 rounded-2xl bg-blue-600 text-white flex items-center justify-center text-xl font-bold">
+                {{ $settingsInitials }}
+            </div>
             <div class="flex-1">
                 <h3 class="font-bold text-lg">{{ Auth::user()->name }}</h3>
                 <p class="text-xs text-gray-400">{{ Auth::user()->email }}</p>

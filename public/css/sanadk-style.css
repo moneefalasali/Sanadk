@@ -327,7 +327,7 @@ svg {
 
 /* Button wrappers */
 .btn-modern-secondary {
-    background: #F3F4F6;
+    background: #f9f0f0;
     color: var(--text-main);
     border: 1px solid #E5E7EB;
     border-radius: 18px;

@@ -33,10 +33,10 @@ class Device extends Model
     public function getIconUrlAttribute()
     {
         return match($this->type) {
-            'eeg' => 'https://cdn-icons-png.flaticon.com/512/3022/3022566.png',
-            'ecg' => 'https://cdn-icons-png.flaticon.com/512/3179/3179062.png',
-            'emg' => 'https://cdn-icons-png.flaticon.com/512/1390/1390324.png',
-            default => 'https://cdn-icons-png.flaticon.com/512/3602/3602976.png',
+            'eeg' => asset('img/logo.png'),
+            'ecg' => asset('img/logo.png'),
+            'emg' => asset('img/logo.png'),
+            default => asset('img/logo.png'),
         };
     }
 

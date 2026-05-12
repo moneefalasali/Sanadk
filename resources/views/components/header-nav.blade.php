@@ -1,11 +1,19 @@
 @php
     $unreadNotifications = $unreadNotifications ?? 0;
+    $nameParts = preg_split('/\s+/', trim(Auth::user()->name));
+    $userInitials = '';
+    foreach ($nameParts as $part) {
+        $userInitials .= mb_substr($part, 0, 1);
+    }
+    $userInitials = mb_strtoupper(mb_substr($userInitials, 0, 2));
 @endphp
 
 <div class="header-profile">
     <div class="d-flex align-items-center gap-3">
         <div class="position-relative">
-            <img src="https://ui-avatars.com/api/?name={{ Auth::user()->name }}&background=random" class="rounded-circle border border-2 border-white shadow" style="width: 48px; height: 48px;">
+            <div class="rounded-circle border border-2 border-white shadow d-flex align-items-center justify-content-center bg-primary text-white" style="width: 48px; height: 48px; font-weight: 700;">
+                {{ $userInitials }}
+            </div>
             <span class="position-absolute bottom-0 end-0 bg-success border border-2 border-white rounded-circle" style="width: 12px; height: 12px;"></span>
         </div>
         <div>

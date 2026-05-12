@@ -17,19 +17,37 @@
                             <h2 id="nearestHospitalName" class="text-lg font-semibold text-slate-900">أقرب مستشفى</h2>
                             <p id="navigationDescription" class="text-sm text-slate-500">نظام الملاحة مُفعّل لتوجيهك إلى أسرع طريق.</p>
                         </div>
-                        <div class="inline-flex gap-2">
-                            <a href="{{ route('dashboard') }}" class="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white text-slate-700 px-4 py-2 text-sm shadow-sm hover:bg-slate-50 transition">
-                                <i class="fas fa-arrow-left"></i>
-                                لوحة التحكم
-                            </a>
-                            <button class="inline-flex items-center gap-2 rounded-2xl bg-slate-900 text-white px-4 py-2 text-sm shadow-sm hover:bg-slate-700 transition">
-                                <i class="fas fa-map-marker-alt"></i>
-                                أقرب مستشفى
-                            </button>
-                            <button class="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 text-white px-4 py-2 text-sm shadow-sm hover:bg-emerald-500 transition">
-                                <i class="fas fa-phone-alt"></i>
-                                اتصال
-                            </button>
+                        <div class="flex flex-col gap-3">
+                            <!-- Map Type Selector -->
+                            <div class="inline-flex gap-1 bg-slate-100 rounded-2xl p-1">
+                                <button id="map-street" class="inline-flex items-center gap-2 rounded-xl bg-white text-slate-700 px-3 py-2 text-xs shadow-sm transition active">
+                                    <i class="fas fa-map"></i>
+                                    خريطة
+                                </button>
+                                <button id="map-satellite" class="inline-flex items-center gap-2 rounded-xl text-slate-600 px-3 py-2 text-xs hover:bg-white hover:text-slate-700 transition">
+                                    <i class="fas fa-satellite"></i>
+                                    أقمار صناعية
+                                </button>
+                                <button id="map-terrain" class="inline-flex items-center gap-2 rounded-xl text-slate-600 px-3 py-2 text-xs hover:bg-white hover:text-slate-700 transition">
+                                    <i class="fas fa-mountain"></i>
+                                    تضاريس
+                                </button>
+                            </div>
+                            <!-- Action Buttons -->
+                            <div class="inline-flex gap-2">
+                                <a href="{{ route('dashboard') }}" class="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white text-slate-700 px-4 py-2 text-sm shadow-sm hover:bg-slate-50 transition">
+                                    <i class="fas fa-arrow-left"></i>
+                                    لوحة التحكم
+                                </a>
+                                <button id="navigateNearest" class="inline-flex items-center gap-2 rounded-2xl bg-slate-900 text-white px-4 py-2 text-sm shadow-sm hover:bg-slate-700 transition">
+                                    <i class="fas fa-route"></i>
+                                    التوجيه لأقرب مستشفى
+                                </button>
+                                <button class="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 text-white px-4 py-2 text-sm shadow-sm hover:bg-emerald-500 transition">
+                                    <i class="fas fa-phone-alt"></i>
+                                    اتصال
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -82,173 +100,34 @@
     </div>
 
     <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="{{ asset('css/leaflet.css') }}" />
+    <link rel="stylesheet" href="{{ asset('css/leaflet-routing-machine.css') }}" />
+
+    <!-- Custom JavaScript -->
+    <script src="{{ asset('js/leaflet.js') }}"></script>
+    <script src="{{ asset('js/leaflet-routing-machine.js') }}"></script>
+    <script src="{{ asset('js/main.js') }}"></script>
+    <script src="{{ asset('js/map.js') }}"></script>
 
     <script>
-        const patients = @json($patients);
-        const defaultCoords = [24.7136, 46.6753];
-        const initialCoords = patients.length && patients[0].latitude && patients[0].longitude
-            ? [patients[0].latitude, patients[0].longitude]
-            : defaultCoords;
-
-        const hospitals = [
-            { name: 'مستشفى الملك فيصل التخصصي', lat: 24.7133, lng: 46.6840, distance: '2.5 كم', eta: '8 دقائق', address: 'الرياض، المملكة العربية السعودية' },
-            { name: 'مستشفى الحرس الوطني', lat: 24.7040, lng: 46.6908, distance: '3.8 كم', eta: '12 دقيقة', address: 'الرياض، المملكة العربية السعودية' },
-            { name: 'مدينة الملك عبدالعزيز الطبية', lat: 24.6969, lng: 46.7500, distance: '5.2 كم', eta: '15 دقيقة', address: 'الرياض، المملكة العربية السعودية' },
-        ];
-
-        function loadLeafletScript() {
-            const sources = [
-                'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
-                'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
-            ];
-
-            function loadSrc(src) {
-                return new Promise((resolve, reject) => {
-                    if (window.L) {
-                        return resolve(window.L);
-                    }
-                    const script = document.createElement('script');
-                    script.src = src;
-                    script.onload = () => {
-                        if (window.L) {
-                            resolve(window.L);
-                        } else {
-                            reject(new Error('Leaflet تم تحميله لكن لم يُعَرَّف.'));
-                        }
-                    };
-                    script.onerror = () => reject(new Error(`فشل تحميل مكتبة Leaflet من ${src}`));
-                    document.head.appendChild(script);
-                });
-            }
-
-            return sources.reduce((promise, src) => {
-                return promise.catch(() => loadSrc(src));
-            }, Promise.reject()).catch(error => {
-                throw new Error('فشل تحميل مكتبة Leaflet: ' + error.message);
-            });
-        }
-
-        function renderHospitalCount(count) {
-            const hospitalCount = document.getElementById('hospitalCount');
-            if (hospitalCount) {
-                hospitalCount.innerText = `${count} موقع${count === 1 ? '' : '‎ات'}`;
+        // Focus on patient function for the patient list
+        function focusPatient(patientId) {
+            if (window.sanadakMap && window.sanadakMap.patientMarkers.has(patientId)) {
+                const patientEntry = window.sanadakMap.patientMarkers.get(patientId);
+                window.sanadakMap.map.setView([patientEntry.lat, patientEntry.lng], 16);
             }
         }
-
-        function setNearestHospitalTitle(hospital) {
-            const title = document.getElementById('nearestHospitalName');
-            const description = document.getElementById('navigationDescription');
-            if (title) {
-                title.innerText = hospital?.name || 'أقرب مستشفى';
-            }
-            if (description) {
-                description.innerText = hospital ? 'نظام الملاحة مُفعّل لتوجيهك إلى أسرع طريق.' : 'لا يوجد مستشفى متاح حالياً.';
-            }
-        }
-
-        function displayHospitals(hospitalsList) {
-            const hospitalsListElement = document.getElementById('hospitalsList');
-            if (!hospitalsListElement) return;
-            renderHospitalCount(hospitalsList.length);
-            setNearestHospitalTitle(hospitalsList[0]);
-
-            hospitalsListElement.innerHTML = hospitalsList.map((hospital, index) =>
-                `<button onclick="focusHospital(${index})" class="text-right w-full p-4 rounded-3xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition text-slate-800">
-                    <div class="font-semibold">${hospital.name}</div>
-                    <div class="text-sm text-slate-600">${hospital.distance} · ${hospital.eta}</div>
-                    <div class="text-xs text-slate-500 mt-2">${hospital.address}</div>
-                </button>`
-            ).join('');
-        }
-
-        function addHospitalsToMap(mapInstance, hospitalsList) {
-            hospitalsList.forEach(hospital => {
-                const icon = L.divIcon({
-                    className: 'hospital-marker',
-                    html: `<div class="rounded-full bg-blue-600 text-white text-[10px] px-2 py-1">🏥</div>`,
-                    iconSize: [32, 32],
-                    iconAnchor: [16, 32]
-                });
-                const marker = L.marker([hospital.lat || defaultCoords[0], hospital.lng || defaultCoords[1]], { icon }).addTo(mapInstance);
-                marker.bindPopup(`<strong>${hospital.name}</strong><br>${hospital.address}<br>${hospital.distance} - ${hospital.eta}`);
-            });
-        }
-
-        function getPatientMarkers(mapInstance) {
-            const markers = {};
-            patients.forEach(patient => {
-                const lat = patient.latitude || defaultCoords[0] + (Math.random() - 0.5) * 0.2;
-                const lng = patient.longitude || defaultCoords[1] + (Math.random() - 0.5) * 0.2;
-                const hasActiveSeizure = patient.seizures && patient.seizures.length > 0 && patient.seizures.some(s => !s.end_time);
-                const statusColor = hasActiveSeizure ? '#ef4444' : '#10b981';
-                const marker = L.circleMarker([lat, lng], {
-                    radius: 9,
-                    fillColor: statusColor,
-                    color: '#ffffff',
-                    weight: 2,
-                    opacity: 1,
-                    fillOpacity: 0.9
-                }).addTo(mapInstance);
-                marker.bindPopup(`<strong>${patient.name}</strong><br>${patient.phone || 'رقم غير متوفر'}<br>${patient.address || 'العنوان غير متوفر'}`);
-                markers[patient.id] = { marker, lat, lng };
-            });
-            return markers;
-        }
-
-        function initMap() {
-            return loadLeafletScript().then(() => {
-                const map = L.map('map').setView(initialCoords, 13);
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '© OpenStreetMap contributors',
-                    maxZoom: 19
-                }).addTo(map);
-
-                const markers = getPatientMarkers(map);
-                const hospitalList = hospitals.slice();
-
-                displayHospitals(hospitalList);
-                addHospitalsToMap(map, hospitalList);
-
-                window.focusPatient = function(id) {
-                    if (markers[id]) {
-                        const patient = markers[id];
-                        map.setView([patient.lat, patient.lng], 15);
-                        patient.marker.openPopup();
-                    }
-                };
-
-                window.focusHospital = function(index) {
-                    const hospital = hospitalList[index];
-                    if (!hospital) return;
-                    map.setView([hospital.lat, hospital.lng], 15);
-                };
-
-                if (!patients.length) {
-                    L.popup({ closeOnClick: false, autoClose: false })
-                        .setLatLng(initialCoords)
-                        .setContent('لا توجد بيانات موقعيّة متاحة حالياً.')
-                        .openOn(map);
-                }
-
-                setInterval(() => {
-                    Object.values(markers).forEach(patientEntry => {
-                        const newLat = patientEntry.lat + (Math.random() - 0.5) * 0.0006;
-                        const newLng = patientEntry.lng + (Math.random() - 0.5) * 0.0006;
-                        patientEntry.lat = newLat;
-                        patientEntry.lng = newLng;
-                        patientEntry.marker.setLatLng([newLat, newLng]);
-                    });
-                }, 6000);
-            }).catch(error => {
-                console.error(error);
-                const message = document.createElement('div');
-                message.className = 'p-4 rounded-3xl bg-red-50 text-red-700 border border-red-200 mt-4';
-                message.innerText = 'حدث خطأ أثناء تحميل خريطة الموقع. حاول تحديث الصفحة.';
-                document.querySelector('.max-w-5xl')?.prepend(message);
-            });
-        }
-
-        window.addEventListener('load', initMap);
     </script>
+
+    <style>
+        .arrow-marker {
+            pointer-events: none;
+        }
+        .arrow-marker div {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+    </style>
 </x-app-layout>

@@ -44,6 +44,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/family/reject-request', [App\Http\Controllers\DashboardController::class, 'rejectFamilyRequest'])->name('family.reject-request');
     Route::get('/doctor', [App\Http\Controllers\DashboardController::class, 'doctor'])->name('doctor');
     Route::post('/doctor', [App\Http\Controllers\DashboardController::class, 'storeDoctorRequest'])->name('doctor.store');
+    Route::post('/doctor/patient/{patient}/note', [App\Http\Controllers\DashboardController::class, 'addPatientNote'])->name('doctor.patient.note');
+    Route::post('/doctor/patient/{patient}/notify', [App\Http\Controllers\DashboardController::class, 'sendPatientNotification'])->name('doctor.patient.notify');
+    Route::get('/patient/{patient}/details', [App\Http\Controllers\DashboardController::class, 'patientDetails'])->name('patient.details');
     Route::get('/settings', [App\Http\Controllers\DashboardController::class, 'settings'])->name('settings');
     Route::get('/ai-analysis', [App\Http\Controllers\DashboardController::class, 'getAIAnalysis'])->name('ai.analysis');
     Route::get('/ai-chat', function() { return view('dashboards.ai_chat'); })->name('ai-chat');

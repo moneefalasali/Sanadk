@@ -1,0 +1,26 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "postcss ./resources/css/app.css -o ./public/css/app.css",
+    "build:watch": "postcss ./resources/css/app.css -o ./public/css/app.css --watch",
+    "build:prod": "NODE_ENV=production postcss ./resources/css/app.css -o ./public/css/app.css --minify",
+    "dev": "npm run build:watch",
+    "watch": "npm run build:watch",
+    "prod": "npm run build:prod",
+    "clean": "rm -f ./public/css/app.css ./public/css/fontawesome.css",
+    "setup": "npm install && npm run build",
+    "postinstall": "echo 'Building CSS...' && npm run build"
+  },
+  "devDependencies": {
+    "@fortawesome/fontawesome-free": "^6.4.2",
+    "autoprefixer": "^10.4.16",
+    "cssnano": "^6.0.1",
+    "postcss": "^8.4.31",
+    "tailwindcss": "^3.4.0"
+  },
+  "dependencies": {
+    "bootstrap": "^5.3.8",
+    "chart.js": "^4.5.1"
+  }
+}

@@ -1,6 +1,6 @@
 <x-app-layout>
     <link rel="stylesheet" href="{{ asset('css/modern-ui.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="{{ asset('css/fontawesome.css') }}">
 
     @php
         $riskScoreValue = is_numeric($riskScore) ? (int) round($riskScore) : 50;
@@ -177,7 +177,7 @@
         // Live device data update function
         async function fetchLiveDeviceData() {
             try {
-                const response = await fetch('{{ route("devices.live-data") }}');
+                const response = await fetch('{{ route("devices.live-data") }}', { cache: 'no-store' });
                 const data = await response.json();
 
                 if (data.success) {
