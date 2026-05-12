@@ -19,31 +19,35 @@
                         </div>
                         <div class="flex flex-col gap-3">
                             <!-- Map Type Selector -->
-                            <div class="inline-flex gap-1 bg-slate-100 rounded-2xl p-1">
-                                <button id="map-street" class="inline-flex items-center gap-2 rounded-xl bg-white text-slate-700 px-3 py-2 text-xs shadow-sm transition active">
+                            <div class="inline-flex gap-1 rounded-2xl overflow-hidden shadow-sm">
+                                <button id="map-street" class="inline-flex items-center gap-2 rounded-xl bg-blue-600 text-black px-3 py-2 text-xs font-semibold transition hover:bg-blue-700">
                                     <i class="fas fa-map"></i>
                                     خريطة
                                 </button>
-                                <button id="map-satellite" class="inline-flex items-center gap-2 rounded-xl text-slate-600 px-3 py-2 text-xs hover:bg-white hover:text-slate-700 transition">
+                                <button id="map-satellite" class="inline-flex items-center gap-2 rounded-xl bg-slate-900 text-black px-3 py-2 text-xs font-semibold transition hover:bg-slate-800">
                                     <i class="fas fa-satellite"></i>
                                     أقمار صناعية
                                 </button>
-                                <button id="map-terrain" class="inline-flex items-center gap-2 rounded-xl text-slate-600 px-3 py-2 text-xs hover:bg-white hover:text-slate-700 transition">
+                                <button id="map-terrain" class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 text-black px-3 py-2 text-xs font-semibold transition hover:bg-emerald-700">
                                     <i class="fas fa-mountain"></i>
                                     تضاريس
                                 </button>
                             </div>
                             <!-- Action Buttons -->
                             <div class="inline-flex gap-2">
-                                <a href="{{ route('dashboard') }}" class="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white text-slate-700 px-4 py-2 text-sm shadow-sm hover:bg-slate-50 transition">
+                                <a href="{{ route('dashboard') }}" class="inline-flex items-center gap-2 rounded-2xl bg-slate-900 text-black px-4 py-2 text-sm shadow-sm hover:bg-slate-700 transition">
                                     <i class="fas fa-arrow-left"></i>
                                     لوحة التحكم
                                 </a>
-                                <button id="navigateNearest" class="inline-flex items-center gap-2 rounded-2xl bg-slate-900 text-white px-4 py-2 text-sm shadow-sm hover:bg-slate-700 transition">
+                                <button id="navigateNearest" class="inline-flex items-center gap-2 rounded-2xl bg-blue-600 text-black px-4 py-2 text-sm shadow-sm hover:bg-blue-700 transition">
                                     <i class="fas fa-route"></i>
                                     التوجيه لأقرب مستشفى
                                 </button>
-                                <button class="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 text-white px-4 py-2 text-sm shadow-sm hover:bg-emerald-500 transition">
+                                <button id="searchHospitalsAI" class="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 text-black px-4 py-2 text-sm shadow-sm hover:bg-emerald-700 transition">
+                                    <i class="fas fa-brain"></i>
+                                    بحث ذكي بالذكاء الاصطناعي
+                                </button>
+                                <button id="contactButton" class="inline-flex items-center gap-2 rounded-2xl bg-cyan-600 text-black px-4 py-2 text-sm shadow-sm hover:bg-cyan-700 transition">
                                     <i class="fas fa-phone-alt"></i>
                                     اتصال
                                 </button>
@@ -117,6 +121,23 @@
                 window.sanadakMap.map.setView([patientEntry.lat, patientEntry.lng], 16);
             }
         }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const contactButton = document.getElementById('contactButton');
+            if (!contactButton) return;
+
+            contactButton.addEventListener('click', () => {
+                window.dispatchEvent(new CustomEvent('contactButtonClicked', {
+                    detail: { source: 'mapPage', timestamp: Date.now() }
+                }));
+
+                if (window.sanadakMap?.showNotification) {
+                    window.sanadakMap.showNotification('تم تفعيل حدث الاتصال', 'success');
+                } else {
+                    alert('تم الضغط على زر الاتصال');
+                }
+            });
+        });
     </script>
 
     <style>

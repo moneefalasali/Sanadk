@@ -38,11 +38,19 @@
     <!-- Bootstrap JS Local -->
     <script src="{{ asset('js/bootstrap.bundle.min.js') }}"></script>
 
-    <!-- PWA Service Worker -->
+    <!-- PWA Service Worker - registration disabled to prevent caching and ensure real-time behavior -->
     <script>
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js');
+            window.addEventListener('load', async () => {
+                try {
+                    const registration = await navigator.serviceWorker.getRegistration('/sw.js');
+                    if (registration) {
+                        await registration.unregister();
+                        console.log('SW unregistered from layout: /sw.js');
+                    }
+                } catch (error) {
+                    console.log('SW unregister failed:', error);
+                }
             });
         }
     </script>

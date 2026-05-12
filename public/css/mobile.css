@@ -264,7 +264,7 @@ body {
 
 .btn-primary {
     background: #4A90E2;
-    color: white;
+    color: rgb(255, 255, 255);
 }
 
 .btn-primary:active {

@@ -151,11 +151,256 @@ class OpenAIService
     }
 
     /**
-     * Search nearby hospitals (alias for findNearbyHospitals)
+     * Search nearby hospitals using AI-enhanced OSM search
      */
     public function searchNearbyHospitals($latitude, $longitude, $location = null)
     {
-        return $this->findNearbyHospitals($latitude, $longitude);
+        try {
+            // Get hospitals from OSM only
+            $osmHospitals = $this->searchHospitalsOSM($latitude, $longitude);
+
+            if (!empty($osmHospitals)) {
+                // Use AI to enhance the results with additional information
+                return $this->enhanceHospitalsWithAI($osmHospitals, $latitude, $longitude);
+            }
+
+            // Return empty array if no hospitals found (no fallback)
+            return [];
+
+        } catch (\Exception $e) {
+            Log::error('Hospital Search Error: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    private function searchHospitalsOSM($latitude, $longitude, $radiusKm = 10)
+    {
+        try {
+            // Convert radius to degrees (approximate)
+            $radiusDeg = $radiusKm / 111.32; // 1 degree ≈ 111.32 km
+
+            // Overpass API query for hospitals and clinics
+            $south = $latitude - $radiusDeg;
+            $west = $longitude - $radiusDeg;
+            $north = $latitude + $radiusDeg;
+            $east = $longitude + $radiusDeg;
+
+            $query = "[out:json][timeout:25];\n"
+                . "(\n"
+                . "  node['amenity'='hospital']({$south},{$west},{$north},{$east});\n"
+                . "  way['amenity'='hospital']({$south},{$west},{$north},{$east});\n"
+                . "  relation['amenity'='hospital']({$south},{$west},{$north},{$east});\n"
+                . "  node['amenity'='clinic']({$south},{$west},{$north},{$east});\n"
+                . "  way['amenity'='clinic']({$south},{$west},{$north},{$east});\n"
+                . "  node['healthcare'='hospital']({$south},{$west},{$north},{$east});\n"
+                . "  way['healthcare'='hospital']({$south},{$west},{$north},{$east});\n"
+                . ");\n"
+                . "out center;\n";
+
+            $url = 'https://overpass-api.de/api/interpreter?data=' . urlencode($query);
+
+            $context = stream_context_create([
+                'http' => [
+                    'timeout' => 15,
+                    'user_agent' => 'SANADAK-HospitalSearch/1.0'
+                ]
+            ]);
+
+            $response = file_get_contents($url, false, $context);
+
+            if ($response === false) {
+                return [];
+            }
+
+            $data = json_decode($response, true);
+
+            if (!$data || !isset($data['elements'])) {
+                return [];
+            }
+
+            $hospitals = [];
+            foreach ($data['elements'] as $element) {
+                if (isset($element['tags']['name'])) {
+                    $lat = $element['lat'] ?? ($element['center']['lat'] ?? null);
+                    $lng = $element['lon'] ?? ($element['center']['lon'] ?? null);
+
+                    if ($lat && $lng) {
+                        $distance = $this->calculateDistance($latitude, $longitude, $lat, $lng);
+
+                        // Skip hospitals too far away
+                        if ($distance > $radiusKm) {
+                            continue;
+                        }
+
+                        $hospitals[] = [
+                            'name' => $element['tags']['name'],
+                            'lat' => $lat,
+                            'lng' => $lng,
+                            'distance' => round($distance, 1),
+                            'eta' => $this->calculateETA($distance),
+                            'address' => $this->buildAddress($element['tags']),
+                            'phone' => $element['tags']['phone'] ?? $element['tags']['contact:phone'] ?? null,
+                            'type' => $this->getHospitalType($element['tags']),
+                            'specialties' => $this->extractSpecialties($element['tags']),
+                            'source' => 'osm'
+                        ];
+                    }
+                }
+            }
+
+            // Sort by distance
+            usort($hospitals, function($a, $b) {
+                return $a['distance'] <=> $b['distance'];
+            });
+
+            return array_slice($hospitals, 0, 8); // Return top 8
+
+        } catch (\Exception $e) {
+            Log::warning('OSM Hospital Search Error: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    private function enhanceHospitalsWithAI($hospitals, $latitude, $longitude)
+    {
+        try {
+            // Use AI to add additional information and prioritize epilepsy-specialized hospitals
+            $prompt = "بناءً على قائمة المستشفيات التالية في المنطقة (الرياض، المملكة العربية السعودية):\n\n";
+
+            foreach ($hospitals as $index => $hospital) {
+                $prompt .= ($index + 1) . ". {$hospital['name']} - {$hospital['type']} - {$hospital['distance']} كم\n";
+            }
+
+            $prompt .= "\nقم بما يلي:\n";
+            $prompt .= "1. حدد أولوية المستشفيات المناسبة لعلاج الصرع والطوارئ العصبية\n";
+            $prompt .= "2. أضف معلومات إضافية عن التخصصات إن أمكن\n";
+            $prompt .= "3. رتبها حسب الأولوية للحالات الطارئة\n\n";
+            $prompt .= "قدم القائمة مع الترتيب الجديد والأولويات.";
+
+            $response = $this->client->chat()->create([
+                'model' => config('services.openai.model', 'gpt-4'),
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'أنت متخصص في الخدمات الطبية الطارئة. ركز على تحديد المستشفيات المناسبة لحالات الصرع والطوارئ العصبية.'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => $prompt
+                    ]
+                ],
+                'max_tokens' => 800,
+                'temperature' => 0.1
+            ]);
+
+            $aiAnalysis = $response->choices[0]->message->content;
+
+            // For now, just return the OSM results with AI enhancement flag
+            // In a more sophisticated implementation, we could parse the AI response
+            // to reorder hospitals based on epilepsy specialization
+
+            return array_map(function($hospital) use ($aiAnalysis) {
+                $hospital['ai_enhanced'] = true;
+                $hospital['emergency_priority'] = $this->calculateEmergencyPriority($hospital, $aiAnalysis);
+                return $hospital;
+            }, $hospitals);
+
+        } catch (\Exception $e) {
+            Log::warning('AI Enhancement Error: ' . $e->getMessage());
+            // Return original hospitals if AI enhancement fails
+            return $hospitals;
+        }
+    }
+
+    private function calculateEmergencyPriority($hospital, $aiAnalysis)
+    {
+        // Simple priority calculation based on hospital type and distance
+        $priority = 1;
+
+        if (stripos($hospital['type'], 'تخصصي') !== false) {
+            $priority += 2;
+        } elseif (stripos($hospital['type'], 'عام') !== false) {
+            $priority += 1;
+        }
+
+        // Closer hospitals get higher priority
+        if ($hospital['distance'] < 2) {
+            $priority += 2;
+        } elseif ($hospital['distance'] < 5) {
+            $priority += 1;
+        }
+
+        return min($priority, 5); // Max priority 5
+    }
+
+    private function buildAddress($tags)
+    {
+        $address = '';
+
+        if (isset($tags['addr:street'])) {
+            $address .= $tags['addr:street'];
+        }
+
+        if (isset($tags['addr:city'])) {
+            if ($address) $address .= ', ';
+            $address .= $tags['addr:city'];
+        }
+
+        if (!$address) {
+            $address = 'المملكة العربية السعودية';
+        }
+
+        return $address;
+    }
+
+    private function extractSpecialties($tags)
+    {
+        $specialties = [];
+
+        if (isset($tags['healthcare:speciality'])) {
+            $specs = explode(';', $tags['healthcare:speciality']);
+            foreach ($specs as $spec) {
+                $specialties[] = trim($spec);
+            }
+        }
+
+        // Add common specialties based on tags
+        if (isset($tags['emergency']) && $tags['emergency'] === 'yes') {
+            $specialties[] = 'طوارئ';
+        }
+
+        return array_unique($specialties);
+    }
+
+    private function calculateDistance($lat1, $lng1, $lat2, $lng2)
+    {
+        $earthRadius = 6371; // Earth's radius in kilometers
+
+        $latDelta = deg2rad($lat2 - $lat1);
+        $lngDelta = deg2rad($lng2 - $lng1);
+
+        $a = sin($latDelta / 2) * sin($latDelta / 2) +
+             cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
+             sin($lngDelta / 2) * sin($lngDelta / 2);
+
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+        return $earthRadius * $c;
+    }
+
+    private function calculateETA($distanceKm)
+    {
+        // Assume average speed of 40 km/h in city traffic
+        $hours = $distanceKm / 40;
+        $minutes = round($hours * 60);
+
+        if ($minutes < 60) {
+            return $minutes . ' دقيقة';
+        } else {
+            $hours = floor($minutes / 60);
+            $remainingMinutes = $minutes % 60;
+            return $hours . ' ساعة ' . ($remainingMinutes > 0 ? $remainingMinutes . ' دقيقة' : '');
+        }
     }
 
     private function buildActivityPrompt(array $deviceData, array $patientHistory = [])
@@ -387,29 +632,5 @@ class OpenAIService
         ];
 
         return $recommendations[$riskLevel] ?? $recommendations['low'];
-    }
-
-    private function getFallbackHospitals($latitude, $longitude)
-    {
-        return [
-            [
-                'name' => 'مستشفى الملك فيصل التخصصي',
-                'distance' => '2.5 كم',
-                'eta' => '8 دقائق',
-                'address' => 'الرياض، المملكة العربية السعودية'
-            ],
-            [
-                'name' => 'مستشفى الحرس الوطني',
-                'distance' => '3.8 كم',
-                'eta' => '12 دقيقة',
-                'address' => 'الرياض، المملكة العربية السعودية'
-            ],
-            [
-                'name' => 'مدينة الملك عبدالعزيز الطبية',
-                'distance' => '5.2 كم',
-                'eta' => '15 دقيقة',
-                'address' => 'الرياض، المملكة العربية السعودية'
-            ]
-        ];
     }
 }

@@ -46,7 +46,7 @@
                 </div>
             </div>
             <p class="font-bold mb-1">{{ $reportsRiskLabel }}</p>
-            <p class="text-sm text-gray-500">احتمال حدوث نوبة خلال 30 دقيقة القادمة {{ $reportsRiskLabel }}.</p>
+            <p class="text-sm text-gray-500"> {{ $reportsRiskLabel }}.</p>
         </div>
 
         <div class="report-toolbar mb-6">
@@ -90,8 +90,8 @@
                 <span class="tag-pill">تحليل ذكي</span>
             </div>
             <div class="flex flex-wrap gap-6 items-center justify-between">
-                <div class="relative w-40 h-40">
-                    <canvas id="factorsChart"></canvas>
+                <div class="relative w-28 h-28" style="max-width: 180px; max-height: 180px;">
+                    <canvas id="factorsChart" width="128" height="128" class="block" style="width: 128px; height: 128px; max-width: 100%; max-height: 100%;"></canvas>
                     <div class="absolute inset-0 flex flex-col items-center justify-center">
                         <span class="text-[10px] text-gray-400">مستوى</span>
                         <span class="text-sm font-bold">التأثير</span>
@@ -195,6 +195,40 @@
             },
             options: {
                 plugins: { legend: { display: false }, tooltip: { enabled: false } }
+            }
+        });
+
+        const factorsCtx = document.getElementById('factorsChart').getContext('2d');
+        const factorsDonut = new Chart(factorsCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['النوم', 'التوتر', 'النشاط', 'أخرى'],
+                datasets: [{
+                    data: [{{ $sleepImpact }}, {{ $stressImpact }}, {{ $activityImpact }}, {{ $otherImpact }}],
+                    backgroundColor: ['#34d399', '#fb923c', '#60a5fa', '#c084fc'],
+                    borderWidth: 0,
+                    cutout: '70%'
+                }]
+            },
+            options: {
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: {
+                            color: '#475569',
+                            boxWidth: 12,
+                            boxHeight: 12,
+                            padding: 16
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: context => `${context.label}: ${context.parsed}%`
+                        }
+                    }
+                },
+                maintainAspectRatio: false
             }
         });
 

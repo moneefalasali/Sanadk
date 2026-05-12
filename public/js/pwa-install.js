@@ -110,20 +110,19 @@ function showNotification(message, type = 'info') {
     }, 3000);
 }
 
-// Register Service Worker
+// Register Service Worker (disabled for real-time mode)
 function registerServiceWorker() {
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/static/js/service-worker.js')
+        navigator.serviceWorker.getRegistration('/static/js/service-worker.js')
             .then(registration => {
-                console.log('✅ Service Worker تم تسجيله بنجاح:', registration);
-                
-                // Check for updates periodically
-                setInterval(() => {
-                    registration.update();
-                }, 60000); // Check every minute
+                if (registration) {
+                    return registration.unregister().then(() => {
+                        console.log('✅ Service Worker unregistered:', registration);
+                    });
+                }
             })
             .catch(error => {
-                console.error('❌ فشل تسجيل Service Worker:', error);
+                console.error('❌ SW unregister failed:', error);
             });
     }
 }

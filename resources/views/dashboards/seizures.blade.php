@@ -29,7 +29,7 @@
                 </div>
             </div>
             <p class="font-bold mb-1">{{ $seizuresRiskLabel }}</p>
-            <p class="text-sm text-gray-500">احتمال حدوث نوبة خلال 30 دقيقة القادمة {{ $seizuresRiskLabel }}.</p>
+            <p class="text-sm text-gray-500">الخطر الحالي: {{ $seizuresRiskLabel }}.</p>
         </div>
 
         <div class="tabs mb-6">

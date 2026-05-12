@@ -1,11 +1,11 @@
-<section>
+<section class="bg-gradient-to-br from-slate-50 to-slate-100 p-6 rounded-3xl border border-slate-200 shadow-xl shadow-slate-300/40">
     <header>
-        <h2 class="text-lg font-medium text-gray-900">
-            {{ __('Profile Information') }}
+        <h2 class="text-lg font-semibold text-slate-900">
+            معلومات الملف الشخصي
         </h2>
 
-        <p class="mt-1 text-sm text-gray-600">
-            {{ __("Update your account's profile information and email address.") }}
+        <p class="mt-1 text-sm text-slate-500">
+            حدّث معلومات حسابك وعنوان البريد الإلكتروني.
         </p>
     </header>
 
@@ -18,13 +18,13 @@
         @method('patch')
 
         <div>
-            <x-input-label for="name" :value="__('Name')" />
+            <x-input-label for="name" value="الاسم" />
             <x-text-input id="name" name="name" type="text" class="mt-1 block w-full" :value="old('name', $user->name)" required autofocus autocomplete="name" />
             <x-input-error class="mt-2" :messages="$errors->get('name')" />
         </div>
 
         <div>
-            <x-input-label for="email" :value="__('Email')" />
+            <x-input-label for="email" value="البريد الإلكتروني" />
             <x-text-input id="email" name="email" type="email" class="mt-1 block w-full" :value="old('email', $user->email)" required autocomplete="username" />
             <x-input-error class="mt-2" :messages="$errors->get('email')" />
 
@@ -47,8 +47,8 @@
             @endif
         </div>
 
-        <div class="flex items-center gap-4">
-            <x-primary-button>{{ __('Save') }}</x-primary-button>
+        <div class="flex flex-wrap items-center gap-4">
+            <x-primary-button class="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 shadow-lg shadow-cyan-500/20">حفظ</x-primary-button>
 
             @if (session('status') === 'profile-updated')
                 <p
@@ -56,8 +56,8 @@
                     x-show="show"
                     x-transition
                     x-init="setTimeout(() => show = false, 2000)"
-                    class="text-sm text-gray-600"
-                >{{ __('Saved.') }}</p>
+                    class="text-sm text-slate-600"
+                >تم الحفظ.</p>
             @endif
         </div>
     </form>

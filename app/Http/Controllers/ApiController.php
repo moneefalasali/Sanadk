@@ -77,85 +77,185 @@ class ApiController extends Controller
     public function getNearbyHospitals(Request $request)
     {
         try {
-            // Get user location from request or use default (Riyadh)
-            $latitude = $request->input('latitude', 24.7136);
-            $longitude = $request->input('longitude', 46.6753);
+            // Get user location from request (required)
+            $latitude = $request->input('latitude');
+            $longitude = $request->input('longitude');
 
-            // Static hospital data for Saudi Arabia (Riyadh area)
-            $hospitals = [
-                [
-                    'name' => 'مستشفى الملك فيصل التخصصي',
-                    'lat' => 24.7133,
-                    'lng' => 46.6840,
-                    'distance' => $this->calculateDistance($latitude, $longitude, 24.7133, 46.6840),
-                    'eta' => $this->calculateETA($this->calculateDistance($latitude, $longitude, 24.7133, 46.6840)),
-                    'address' => 'الرياض، المملكة العربية السعودية',
-                    'phone' => '+966114424000',
-                    'type' => 'تخصصي'
-                ],
-                [
-                    'name' => 'مستشفى الحرس الوطني',
-                    'lat' => 24.7040,
-                    'lng' => 46.6908,
-                    'distance' => $this->calculateDistance($latitude, $longitude, 24.7040, 46.6908),
-                    'eta' => $this->calculateETA($this->calculateDistance($latitude, $longitude, 24.7040, 46.6908)),
-                    'address' => 'الرياض، المملكة العربية السعودية',
-                    'phone' => '+966114411111',
-                    'type' => 'عام'
-                ],
-                [
-                    'name' => 'مدينة الملك عبدالعزيز الطبية',
-                    'lat' => 24.6969,
-                    'lng' => 46.7500,
-                    'distance' => $this->calculateDistance($latitude, $longitude, 24.6969, 46.7500),
-                    'eta' => $this->calculateETA($this->calculateDistance($latitude, $longitude, 24.6969, 46.7500)),
-                    'address' => 'الرياض، المملكة العربية السعودية',
-                    'phone' => '+966114888888',
-                    'type' => 'تعليمي'
-                ],
-                [
-                    'name' => 'مستشفى الملك خالد الجامعي',
-                    'lat' => 24.7170,
-                    'lng' => 46.6250,
-                    'distance' => $this->calculateDistance($latitude, $longitude, 24.7170, 46.6250),
-                    'eta' => $this->calculateETA($this->calculateDistance($latitude, $longitude, 24.7170, 46.6250)),
-                    'address' => 'الرياض، المملكة العربية السعودية',
-                    'phone' => '+966114670000',
-                    'type' => 'جامعي'
-                ],
-                [
-                    'name' => 'مستشفى الأمير سلطان',
-                    'lat' => 24.7250,
-                    'lng' => 46.6800,
-                    'distance' => $this->calculateDistance($latitude, $longitude, 24.7250, 46.6800),
-                    'eta' => $this->calculateETA($this->calculateDistance($latitude, $longitude, 24.7250, 46.6800)),
-                    'address' => 'الرياض، المملكة العربية السعودية',
-                    'phone' => '+966114444444',
-                    'type' => 'عسكري'
-                ]
-            ];
+            if (!$latitude || !$longitude) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'يجب تحديد الموقع (latitude و longitude)'
+                ], 400);
+            }
 
-            // Sort by distance
-            usort($hospitals, function($a, $b) {
-                return $a['distance'] <=> $b['distance'];
-            });
+            // Get hospitals from OpenStreetMap Overpass API only
+            $osmHospitals = $this->searchHospitalsOSM($latitude, $longitude);
 
+            if (!empty($osmHospitals)) {
+                // Sort by distance
+                usort($osmHospitals, function($a, $b) {
+                    return $a['distance'] <=> $b['distance'];
+                });
+
+                return response()->json([
+                    'success' => true,
+                    'hospitals' => array_slice($osmHospitals, 0, 10),
+                    'user_location' => [
+                        'lat' => (float)$latitude,
+                        'lng' => (float)$longitude
+                    ],
+                    'source' => 'osm',
+                    'total' => count($osmHospitals)
+                ]);
+            }
+
+            // No hospitals found
             return response()->json([
                 'success' => true,
-                'hospitals' => array_slice($hospitals, 0, 5), // Return top 5 nearest
+                'hospitals' => [],
                 'user_location' => [
-                    'lat' => $latitude,
-                    'lng' => $longitude
-                ]
+                    'lat' => (float)$latitude,
+                    'lng' => (float)$longitude
+                ],
+                'message' => 'لم يتم العثور على مستشفيات قريبة',
+                'source' => 'osm'
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'فشل في تحميل بيانات المستشفيات',
+                'message' => 'خطأ في تحميل البيانات',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
+
+    private function searchHospitalsOSM($latitude, $longitude, $radiusKm = 15)
+    {
+        try {
+            // Convert radius to degrees (approximate)
+            $radiusDeg = $radiusKm / 111.32; // 1 degree ≈ 111.32 km
+
+            // Overpass API query for hospitals
+            $south = $latitude - $radiusDeg;
+            $west = $longitude - $radiusDeg;
+            $north = $latitude + $radiusDeg;
+            $east = $longitude + $radiusDeg;
+
+            $query = "[out:json][timeout:30];\n"
+                . "(\n"
+                . "  node['amenity'='hospital']({$south},{$west},{$north},{$east});\n"
+                . "  way['amenity'='hospital']({$south},{$west},{$north},{$east});\n"
+                . "  relation['amenity'='hospital']({$south},{$west},{$north},{$east});\n"
+                . "  node['amenity'='clinic']({$south},{$west},{$north},{$east});\n"
+                . "  way['amenity'='clinic']({$south},{$west},{$north},{$east});\n"
+                . "  node['healthcare']({$south},{$west},{$north},{$east});\n"
+                . ");\n"
+                . "out center;\n";
+
+            $url = 'https://overpass-api.de/api/interpreter?data=' . urlencode($query);
+
+            $context = stream_context_create([
+                'http' => [
+                    'timeout' => 30,
+                    'user_agent' => 'SANADAK-HospitalSearch/1.0'
+                ]
+            ]);
+
+            $response = @file_get_contents($url, false, $context);
+
+            if ($response === false) {
+                return [];
+            }
+
+            $data = json_decode($response, true);
+
+            if (!$data || !isset($data['elements'])) {
+                return [];
+            }
+
+            $hospitals = [];
+            foreach ($data['elements'] as $element) {
+                if (isset($element['tags']['name'])) {
+                    $lat = $element['lat'] ?? ($element['center']['lat'] ?? null);
+                    $lng = $element['lon'] ?? ($element['center']['lon'] ?? null);
+
+                    if ($lat && $lng) {
+                        $distance = $this->calculateDistance($latitude, $longitude, $lat, $lng);
+
+                        // Skip hospitals too far away
+                        if ($distance > $radiusKm) {
+                            continue;
+                        }
+
+                        $hospitals[] = [
+                            'name' => $element['tags']['name'],
+                            'lat' => (float)$lat,
+                            'lng' => (float)$lng,
+                            'distance' => round($distance, 1),
+                            'eta' => $this->calculateETA($distance),
+                            'address' => $this->buildAddress($element['tags']),
+                            'phone' => $element['tags']['phone'] ?? $element['tags']['contact:phone'] ?? null,
+                            'type' => $this->getHospitalType($element['tags']),
+                            'specialties' => $this->extractSpecialties($element['tags']),
+                            'source' => 'osm'
+                        ];
+                    }
+                }
+            }
+
+            return $hospitals;
+
+        } catch (\Exception $e) {
+            \Log::error('OSM Hospital Search Error: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    private function buildAddress($tags)
+    {
+        $parts = [];
+        if (isset($tags['addr:street'])) $parts[] = $tags['addr:street'];
+        if (isset($tags['addr:city'])) $parts[] = $tags['addr:city'];
+        if (isset($tags['addr:country'])) $parts[] = $tags['addr:country'];
+        
+        return !empty($parts) ? implode(', ', $parts) : 'المملكة العربية السعودية';
+    }
+
+    private function extractSpecialties($tags)
+    {
+        $specialties = [];
+
+        if (isset($tags['healthcare:speciality'])) {
+            $specs = explode(';', $tags['healthcare:speciality']);
+            foreach ($specs as $spec) {
+                $specialties[] = trim($spec);
+            }
+        }
+
+        if (isset($tags['emergency']) && $tags['emergency'] === 'yes') {
+            $specialties[] = 'طوارئ';
+        }
+
+        return array_unique($specialties);
+    }
+
+    private function getHospitalType($tags)
+    {
+        if (isset($tags['healthcare'])) {
+            $healthcare = strtolower($tags['healthcare']);
+            if (strpos($healthcare, 'hospital') !== false) return 'مستشفى';
+            if (strpos($healthcare, 'clinic') !== false) return 'عيادة';
+            if (strpos($healthcare, 'doctor') !== false) return 'عيادة طبيب';
+        }
+
+        if (isset($tags['amenity'])) {
+            if ($tags['amenity'] === 'hospital') return 'مستشفى';
+            if ($tags['amenity'] === 'clinic') return 'عيادة';
+        }
+
+        return 'مرفق طبي';
+    }
+
 
     private function calculateDistance($lat1, $lng1, $lat2, $lng2)
     {
