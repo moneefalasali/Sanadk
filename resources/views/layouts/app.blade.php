@@ -31,7 +31,11 @@
     <div class="min-vh-100">
         <!-- Page Content -->
         <main>
-            {{ $slot }}
+            @hasSection('content')
+                @yield('content')
+            @else
+                {{ $slot ?? '' }}
+            @endif
         </main>
     </div>
 

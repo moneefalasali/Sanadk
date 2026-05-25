@@ -66,6 +66,38 @@ return [
             'driver' => 'null',
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | Reverb (laravel-websockets / reverb compatible)
+        |--------------------------------------------------------------------------
+        |
+        | The `reverb` connection provides a pusher-compatible driver that can
+        | be used with a self-hosted WebSocket server such as laravel-websockets
+        | or Reverb. It uses the pusher protocol but allows overriding host/port
+        | so the application can broadcast using the same API while the
+        | underlying server is self-hosted.
+        |
+        */
+        'reverb' => [
+            'driver' => 'pusher',
+            'key' => env('REVERB_APP_KEY'),
+            'secret' => env('REVERB_APP_SECRET'),
+            'app_id' => env('REVERB_APP_ID'),
+            'options' => [
+                'cluster' => env('REVERB_APP_CLUSTER', null),
+                'host' => env('REVERB_HOST', '127.0.0.1'),
+                'port' => env('REVERB_PORT', 6001),
+                'scheme' => env('REVERB_SCHEME', 'http'),
+                'encrypted' => env('REVERB_ENCRYPTED', false),
+                'useTLS' => env('REVERB_USE_TLS', false),
+                'curl_options' => [
+                    // Optional Guzzle curl options
+                ],
+            ],
+        ],
+
+        // Socket.IO deprecated: Reverb (pusher-compatible) must be used.
+
     ],
 
 ];

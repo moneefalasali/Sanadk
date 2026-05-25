@@ -19,8 +19,12 @@
                     <button type="submit" class="btn-modern px-5 py-3">تشغيل وضع المحاكاة</button>
                 </form>
                 <button id="stopSimulationBtn" type="button" class="btn-modern-secondary px-5 py-3">إيقاف وضع المحاكاة</button>
+                <a href="{{ route('devices.polar.connect') }}" class="btn-modern px-5 py-3 bg-sky-600 hover:bg-sky-700 text-white">ربط حساب Polar</a>
                 <button id="analyzeBtn" class="btn-modern-secondary px-5 py-3">تحليل البيانات</button>
             </div>
+            @if(auth()->user()->polar_owner_id)
+                <div class="mt-3 text-sm text-green-700">تم ربط حساب Polar بنجاح. سيتم مزامنة بيانات جهازك عبر الخدمة السحابية.</div>
+            @endif
         </div>
 
         @if(session('success'))
@@ -32,15 +36,15 @@
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
             <div class="bg-white p-5 rounded-3xl shadow-sm">
                 <p class="text-sm text-gray-500 mb-2">الأجهزة المتصلة</p>
-                <p class="text-3xl font-bold text-blue-600">{{ $connectedCount }}</p>
+                <p id="connectedCountValue" class="text-3xl font-bold text-blue-600">{{ $connectedCount }}</p>
             </div>
             <div class="bg-white p-5 rounded-3xl shadow-sm">
                 <p class="text-sm text-gray-500 mb-2">متوسط البطارية</p>
-                <p class="text-3xl font-bold text-emerald-600">{{ round($batteryAverage) }}%</p>
+                <p id="batteryAverageValue" class="text-3xl font-bold text-emerald-600">{{ round($batteryAverage) }}%</p>
             </div>
             <div class="bg-white p-5 rounded-3xl shadow-sm">
                 <p class="text-sm text-gray-500 mb-2">أنواع الأجهزة</p>
-                <p class="text-3xl font-bold text-orange-600">{{ $deviceTypes->count() }}</p>
+                <p id="deviceTypesValue" class="text-3xl font-bold text-orange-600">{{ $deviceTypes->count() }}</p>
             </div>
         </div>
 
@@ -50,10 +54,34 @@
                 $devicesRiskLabel = $devicesRiskScore >= 70 ? 'خطر عالي' : ($devicesRiskScore >= 40 ? 'خطر متوسط' : 'خطر منخفض');
             @endphp
             <p class="text-sm text-gray-500 mb-2">مؤشر الخطر الحالي</p>
-            <div class="circular-progress mx-auto mb-3" style="background: conic-gradient(var(--primary) {{ $devicesRiskScore }}%, #EDF2F7 0deg); width: 140px; height: 140px;">
-                <div class="progress-value">{{ $devicesRiskScore }}</div>
+            <div id="devicesRiskProgress" class="circular-progress mx-auto mb-3" style="background: conic-gradient(var(--primary) {{ $devicesRiskScore }}%, #EDF2F7 0deg); width: 140px; height: 140px;">
+                <div id="devicesRiskValue" class="progress-value">{{ $devicesRiskScore }}</div>
             </div>
-            <p class="text-center text-sm text-gray-600">{{ $devicesRiskLabel }}</p>
+            <p id="devicesRiskLabel" class="text-center text-sm text-gray-600">{{ $devicesRiskLabel }}</p>
+        </div>
+
+        <div class="bg-white p-5 rounded-3xl shadow-sm mb-6">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                    <p class="text-sm text-gray-500 mb-2">حالة البث المباشر</p>
+                    <p id="liveRealtimeStatusText" class="font-bold text-lg">جاري الاتصال...</p>
+                </div>
+                <span id="liveRealtimeBadge" class="px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">جاري الاتصال...</span>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+                <div class="bg-gray-50 p-4 rounded-2xl">
+                    <p class="text-xs text-gray-500">حالة EEG</p>
+                    <p id="liveEegStatus" class="font-bold text-sm mt-1">غير معروف</p>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-2xl">
+                    <p class="text-xs text-gray-500">آخر تحديث</p>
+                    <p id="liveLastUpdated" class="font-bold text-sm mt-1">--</p>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-2xl">
+                    <p class="text-xs text-gray-500">مؤشر الخطر</p>
+                    <p id="liveRiskScore" class="font-bold text-sm mt-1">{{ $devicesRiskScore }}</p>
+                </div>
+            </div>
         </div>
 
         <!-- Analysis Results -->
@@ -75,7 +103,12 @@
                             default => 'fa-microchip',
                         };
                     @endphp
-                    <div class="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 hover:shadow-md transition">
+                    <div class="device-card bg-white p-6 rounded-3xl shadow-sm border border-gray-100 hover:shadow-md transition"
+                         data-device-id="{{ $device->id }}"
+                         data-device-name="{{ $device->name }}"
+                         data-device-type="{{ $device->type }}"
+                         data-device-status="{{ $device->is_connected ? 'connected' : 'disconnected' }}"
+                         data-device-battery="{{ $device->battery_level ?? 0 }}">
                         <div class="flex flex-col sm:flex-row items-center gap-5">
                             <div class="w-24 h-24 bg-gray-50 rounded-3xl flex items-center justify-center p-3 text-blue-600">
                                 <i class="fas {{ $deviceIconClass }} fa-3x"></i>
@@ -86,7 +119,7 @@
                                         <h4 class="font-bold text-lg">{{ $device->name }}</h4>
                                         <p class="text-sm text-gray-500">{{ $device->type_label }}</p>
                                     </div>
-                                    <span class="text-xs font-semibold uppercase {{ $device->is_connected ? 'text-emerald-600' : 'text-rose-600' }}">
+                                    <span id="deviceStatus-{{ $device->id }}" class="text-xs font-semibold uppercase {{ $device->is_connected ? 'text-emerald-600' : 'text-rose-600' }}">
                                         {{ $device->is_connected ? 'متصل' : 'غير متصل' }}
                                     </span>
                                 </div>
@@ -95,18 +128,21 @@
                                         <p class="text-xs text-gray-400">مستوى البطارية</p>
                                         <div class="flex items-center gap-2">
                                             <div class="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
-                                                <div class="h-full {{ $device->battery_level > 30 ? 'bg-emerald-500' : 'bg-rose-500' }}" style="width: {{ $device->battery_level ?? 0 }}%"></div>
+                                                <div id="deviceBatteryBar-{{ $device->id }}" class="h-full {{ $device->battery_level > 30 ? 'bg-emerald-500' : 'bg-rose-500' }}" style="width: {{ $device->battery_level ?? 0 }}%"></div>
                                             </div>
-                                            <span class="text-xs font-semibold">{{ $device->battery_level ?? 0 }}%</span>
+                                            <span id="deviceBatteryText-{{ $device->id }}" class="text-xs font-semibold">{{ $device->battery_level ?? 0 }}%</span>
                                         </div>
                                     </div>
                                     <div class="space-y-2">
                                         <p class="text-xs text-gray-400">إشارة حية</p>
                                         <div class="flex items-center gap-2">
-                                            <span class="h-2 w-2 rounded-full {{ $device->is_connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300' }}"></span>
-                                            <span class="text-xs text-gray-600">{{ $device->is_connected ? 'نشطة' : 'منقطعة' }}</span>
+                                            <span id="deviceSignalDot-{{ $device->id }}" class="h-2 w-2 rounded-full {{ $device->is_connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300' }}"></span>
+                                            <span id="deviceSignalText-{{ $device->id }}" class="text-xs text-gray-600">{{ $device->is_connected ? 'نشطة' : 'منقطعة' }}</span>
                                         </div>
                                     </div>
+                                </div>
+                                <div class="mt-3 text-xs text-gray-500">
+                                    آخر تحديث: <span id="deviceLastUpdated-{{ $device->id }}">{{ $device->updated_at->diffForHumans() }}</span>
                                 </div>
                                 <div class="mt-4 flex flex-wrap gap-2">
                                     <button class="btn-modern-secondary toggle-simulation" data-device-id="{{ $device->id }}" data-current-mode="{{ $device->simulation_mode ? 'true' : 'false' }}">
@@ -117,6 +153,7 @@
                                         <i class="fas fa-chart-line"></i>
                                         عرض البيانات
                                     </button>
+                                    <button class="btn-modern-secondary web-bluetooth-connect" data-device-id="{{ $device->id }}">اتصال عبر Chrome</button>
                                     <button class="btn-modern-secondary">تفاصيل الاتصال</button>
                                 </div>
                             </div>
@@ -532,4 +569,379 @@
             return value;
         }
     </script>
+
+    @php
+        $reverbHost = config('broadcasting.connections.reverb.host', request()->getHost());
+        $reverbPort = (int) config('broadcasting.connections.reverb.port', 6001);
+        $reverbScheme = config('broadcasting.connections.reverb.scheme', request()->getScheme());
+        $reverbUseTls = config('broadcasting.connections.reverb.useTLS', $reverbScheme === 'https') ? 'true' : 'false';
+        $reverbKey = config('broadcasting.connections.reverb.key');
+    @endphp
+
+    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/laravel-echo@1.15.3/dist/echo.iife.js"></script>
+    <script>
+        if (typeof window.Echo === 'undefined' && typeof Echo !== 'undefined') {
+            window.Echo = new Echo({
+                broadcaster: 'pusher',
+                key: '{{ $reverbKey }}',
+                wsHost: '{{ $reverbHost }}',
+                wsPort: {{ $reverbPort }},
+                wssPort: {{ $reverbPort }},
+                forceTLS: {{ $reverbUseTls }},
+                enabledTransports: ['ws', 'wss'],
+                disableStats: true,
+                authEndpoint: '/broadcasting/auth',
+            });
+        }
+    </script>
+
+    <script>
+        const devicesPageCacheKey = 'sanadak-devices-live-cache';
+        const patientId = {{ auth()->id() }};
+        const deviceDataEndpoints = @json($devices->mapWithKeys(fn($device) => [$device->id => route('devices.data', $device->id)]));
+
+        function setRealtimeBadge(status, label) {
+            const badge = document.getElementById('liveRealtimeBadge');
+            const statusText = document.getElementById('liveRealtimeStatusText');
+
+            if (badge) {
+                badge.textContent = label;
+                badge.className = 'px-3 py-1 rounded-full text-xs font-semibold';
+                if (status === 'connected') {
+                    badge.classList.add('bg-emerald-100', 'text-emerald-700');
+                } else if (status === 'warning') {
+                    badge.classList.add('bg-amber-100', 'text-amber-700');
+                } else {
+                    badge.classList.add('bg-rose-100', 'text-rose-700');
+                }
+            }
+
+            if (statusText) {
+                statusText.textContent = label;
+            }
+        }
+
+        function formatLiveTimestamp(value) {
+            if (!value) return '--';
+            if (typeof value === 'string' && /ago|قبل|منذ/.test(value)) return value;
+            const parsed = new Date(value);
+            if (Number.isNaN(parsed.getTime())) return value;
+            return parsed.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        function updateSummaryCards() {
+            const cards = Array.from(document.querySelectorAll('.device-card'));
+            const connectedCount = cards.filter(card => card.dataset.deviceStatus === 'connected').length;
+            const batteryAverage = cards.length ? cards.reduce((sum, card) => sum + Number(card.dataset.deviceBattery || 0), 0) / cards.length : 0;
+            const connectedCountElement = document.getElementById('connectedCountValue');
+            const batteryAverageElement = document.getElementById('batteryAverageValue');
+
+            if (connectedCountElement) connectedCountElement.textContent = String(connectedCount);
+            if (batteryAverageElement) batteryAverageElement.textContent = `${Math.round(batteryAverage)}%`;
+        }
+
+        function updateRiskCard(score) {
+            const safeScore = Math.max(0, Math.min(100, Number(score) || 0));
+            const progress = document.getElementById('devicesRiskProgress');
+            const value = document.getElementById('devicesRiskValue');
+            const label = document.getElementById('devicesRiskLabel');
+            const liveRisk = document.getElementById('liveRiskScore');
+
+            if (progress) progress.style.background = `conic-gradient(var(--primary) ${safeScore}%, #EDF2F7 0deg)`;
+            if (value) value.textContent = safeScore;
+            if (label) {
+                label.textContent = safeScore >= 70 ? 'خطر عالي' : (safeScore >= 40 ? 'خطر متوسط' : 'خطر منخفض');
+            }
+            if (liveRisk) liveRisk.textContent = safeScore;
+        }
+
+        function updateDeviceCard(deviceId, updates = {}) {
+            const card = document.querySelector(`.device-card[data-device-id="${deviceId}"]`);
+            if (!card) return;
+
+            const status = updates.status || card.dataset.deviceStatus || 'disconnected';
+            const batteryLevel = updates.battery_level !== undefined ? Number(updates.battery_level) : Number(card.dataset.deviceBattery || 0);
+            const badge = document.getElementById(`deviceStatus-${deviceId}`);
+            const batteryBar = document.getElementById(`deviceBatteryBar-${deviceId}`);
+            const batteryText = document.getElementById(`deviceBatteryText-${deviceId}`);
+            const signalDot = document.getElementById(`deviceSignalDot-${deviceId}`);
+            const signalText = document.getElementById(`deviceSignalText-${deviceId}`);
+            const lastUpdated = document.getElementById(`deviceLastUpdated-${deviceId}`);
+
+            card.dataset.deviceStatus = status;
+            card.dataset.deviceBattery = String(batteryLevel);
+
+            if (badge) {
+                badge.textContent = status === 'connected' ? 'متصل' : 'غير متصل';
+                badge.className = 'text-xs font-semibold uppercase';
+                if (status === 'connected') {
+                    badge.classList.add('text-emerald-600');
+                } else {
+                    badge.classList.add('text-rose-600');
+                }
+            }
+
+            if (batteryBar) {
+                batteryBar.style.width = `${Math.max(0, Math.min(100, batteryLevel))}%`;
+                batteryBar.className = 'h-full';
+                batteryBar.classList.add(batteryLevel > 30 ? 'bg-emerald-500' : 'bg-rose-500');
+            }
+
+            if (batteryText) {
+                batteryText.textContent = `${Math.max(0, Math.min(100, batteryLevel))}%`;
+            }
+
+            if (signalDot) {
+                signalDot.className = 'h-2 w-2 rounded-full';
+                if (status === 'connected') {
+                    signalDot.classList.add('bg-emerald-500', 'animate-pulse');
+                } else {
+                    signalDot.classList.add('bg-gray-300');
+                }
+            }
+
+            if (signalText) {
+                signalText.textContent = status === 'connected' ? 'نشطة' : 'منقطعة';
+            }
+
+            if (lastUpdated && updates.last_updated) {
+                lastUpdated.textContent = formatLiveTimestamp(updates.last_updated);
+            }
+
+            updateSummaryCards();
+        }
+
+        function normalizeDeviceType(type) {
+            const normalized = String(type || '').toLowerCase().trim();
+            if (!normalized) return '';
+            if (['polar', 'ecg', 'heart', 'heart_rate'].includes(normalized)) return 'ecg';
+            if (['emotiv', 'eeg', 'brain', 'eeg_device'].includes(normalized)) return 'eeg';
+            if (['esp32', 'emg', 'muscle'].includes(normalized)) return 'emg';
+            return normalized;
+        }
+
+        function normalizeDeviceKey(value) {
+            return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+        }
+
+        function resolveDeviceStatus(value) {
+            const normalized = String(value || '').toLowerCase();
+            if (['connected', 'online', 'active', 'ok', 'stable'].includes(normalized)) return 'connected';
+            if (['disconnected', 'offline', 'inactive', 'error', 'warning'].includes(normalized)) return 'disconnected';
+            return 'connected';
+        }
+
+        function buildEventDeviceCandidates(payload) {
+            const eventData = payload?.data || payload || {};
+            const vital = eventData.vital_sign || {};
+            const devices = Array.isArray(eventData.devices) ? eventData.devices : [];
+            const payloadDevice = eventData.device || {};
+            const candidates = [];
+
+            const explicitDevice = {
+                device_id: vital.device_id ?? payloadDevice.device_id ?? eventData.device_id ?? null,
+                device_type: normalizeDeviceType(vital.device_type ?? payloadDevice.device_type ?? eventData.device_type ?? ''),
+                device_name: vital.device_name ?? payloadDevice.device_name ?? eventData.device_name ?? eventData.name ?? null,
+                battery_level: vital.battery_level ?? payloadDevice.battery_level ?? eventData.battery_level ?? null,
+                status: eventData.connection_status ?? payloadDevice.status ?? eventData.status ?? 'connected',
+            };
+
+            if (explicitDevice.device_id !== null || explicitDevice.device_type || explicitDevice.device_name) {
+                candidates.push(explicitDevice);
+            }
+
+            devices.forEach(device => {
+                candidates.push({
+                    device_id: device.id ?? null,
+                    device_type: normalizeDeviceType(device.type ?? ''),
+                    device_name: device.name ?? null,
+                    battery_level: device.battery_level ?? null,
+                    status: device.status ?? 'connected',
+                });
+            });
+
+            return candidates;
+        }
+
+        function findDeviceCardMatches(payload) {
+            const cards = Array.from(document.querySelectorAll('.device-card'));
+            if (!cards.length) return [];
+
+            const candidates = buildEventDeviceCandidates(payload);
+            const matches = [];
+
+            cards.forEach(card => {
+                const cardId = String(card.dataset.deviceId || '');
+                const cardType = normalizeDeviceType(card.dataset.deviceType || '');
+                const cardName = normalizeDeviceKey(card.dataset.deviceName || '');
+
+                const matchedCandidate = candidates.find(candidate => {
+                    if (candidate.device_id !== null && String(candidate.device_id) === cardId) {
+                        return true;
+                    }
+
+                    const candidateType = normalizeDeviceType(candidate.device_type || '');
+                    const candidateName = normalizeDeviceKey(candidate.device_name || '');
+
+                    if (candidateType && cardType && candidateType === cardType) {
+                        return true;
+                    }
+
+                    if (candidateName && cardName && (candidateName.includes(cardName) || cardName.includes(candidateName))) {
+                        return true;
+                    }
+
+                    return false;
+                });
+
+                if (matchedCandidate) {
+                    matches.push({ card, candidate: matchedCandidate });
+                }
+            });
+
+            return matches;
+        }
+
+        function normalizeRealtimeData(payload) {
+            const eventData = payload?.data || payload || {};
+            const analysis = eventData.analysis || {};
+            const riskScore = analysis.risk_score !== undefined ? Number(analysis.risk_score) : null;
+
+            return {
+                last_updated: eventData.timestamp || new Date().toISOString(),
+                eeg_status: eventData.eeg_status || (eventData.vital_sign ? 'محدث' : 'غير معروف'),
+                connection_status: eventData.connection_status || 'connected',
+                risk_score: riskScore,
+            };
+        }
+
+        function syncDeviceStatusFromEvent(payload, lastUpdated) {
+            const matches = findDeviceCardMatches(payload);
+            if (!matches.length) return;
+
+            matches.forEach(({ card, candidate }) => {
+                updateDeviceCard(card.dataset.deviceId, {
+                    status: resolveDeviceStatus(candidate.status),
+                    battery_level: candidate.battery_level ?? undefined,
+                    last_updated: lastUpdated,
+                });
+            });
+        }
+
+        function applyRealtimeData(payload) {
+            const normalized = normalizeRealtimeData(payload);
+
+            if (normalized.eeg_status) {
+                const eegStatus = document.getElementById('liveEegStatus');
+                if (eegStatus) eegStatus.textContent = normalized.eeg_status;
+            }
+
+            if (normalized.last_updated) {
+                const lastUpdated = document.getElementById('liveLastUpdated');
+                if (lastUpdated) lastUpdated.textContent = formatLiveTimestamp(normalized.last_updated);
+            }
+
+            if (normalized.risk_score !== null) {
+                updateRiskCard(Math.round(normalized.risk_score * 100));
+            }
+
+            setRealtimeBadge(normalized.connection_status === 'connected' ? 'connected' : 'warning', normalized.connection_status === 'connected' ? 'متصل' : 'إعادة الاتصال...');
+            syncDeviceStatusFromEvent(payload, normalized.last_updated);
+        }
+
+        async function fetchDeviceSummaries() {
+            const cards = Array.from(document.querySelectorAll('.device-card'));
+            if (!cards.length) return;
+
+            const snapshots = await Promise.all(cards.map(async (card) => {
+                const deviceId = card.dataset.deviceId;
+                const endpoint = deviceDataEndpoints[deviceId];
+
+                if (!endpoint) return null;
+
+                try {
+                    const response = await fetch(endpoint, { cache: 'no-store' });
+                    const data = await response.json();
+                    return data?.success ? data.device : null;
+                } catch (error) {
+                    return null;
+                }
+            }));
+
+            snapshots.forEach((snapshot) => {
+                if (!snapshot) return;
+                updateDeviceCard(snapshot.id, {
+                    status: snapshot.status,
+                    battery_level: snapshot.battery_level,
+                    last_updated: snapshot.last_updated,
+                });
+            });
+
+            updateSummaryCards();
+        }
+
+        async function fetchLiveDeviceData() {
+            try {
+                const response = await fetch('{{ route("devices.live-data") }}', { cache: 'no-store' });
+                const data = await response.json();
+
+                if (!data?.success) {
+                    setRealtimeBadge('warning', 'إعادة الاتصال...');
+                    return;
+                }
+
+                if (data.brain_activity) {
+                    const eegStatus = document.getElementById('liveEegStatus');
+                    if (eegStatus) eegStatus.textContent = data.brain_activity;
+                }
+
+                if (data.last_updated) {
+                    const liveLastUpdated = document.getElementById('liveLastUpdated');
+                    if (liveLastUpdated) liveLastUpdated.textContent = formatLiveTimestamp(data.last_updated);
+                }
+
+                setRealtimeBadge('connected', 'متصل');
+            } catch (error) {
+                setRealtimeBadge('warning', 'إعادة الاتصال...');
+            }
+        }
+
+        function subscribeRealtime() {
+            if (!window.Echo) {
+                setRealtimeBadge('warning', 'إعادة الاتصال...');
+                setTimeout(subscribeRealtime, 1500);
+                return;
+            }
+
+            try {
+                const channel = window.Echo.private(`patient.${patientId}`);
+                channel.listen('MedicalDataUpdated', (event) => {
+                    setRealtimeBadge('connected', 'متصل');
+                    applyRealtimeData(event);
+                });
+
+                const connector = window.Echo.connector;
+                if (connector && connector.socket && connector.socket.on) {
+                    connector.socket.on('connect', () => setRealtimeBadge('connected', 'متصل'));
+                    connector.socket.on('disconnect', () => setRealtimeBadge('warning', 'إعادة الاتصال...'));
+                }
+            } catch (error) {
+                setRealtimeBadge('warning', 'إعادة الاتصال...');
+                setTimeout(subscribeRealtime, 1500);
+            }
+        }
+
+        async function initializeRealtime() {
+            updateSummaryCards();
+            await fetchDeviceSummaries();
+            await fetchLiveDeviceData();
+            subscribeRealtime();
+        }
+
+        initializeRealtime();
+    </script>
+
+    <script>window.csrfToken = '{{ csrf_token() }}';</script>
+    <script src="{{ asset('js/web-bluetooth.js') }}"></script>
 </x-app-layout>

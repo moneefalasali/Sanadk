@@ -45,6 +45,32 @@
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
                 @endif
+
+                <div class="mb-6 bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+                    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                        <div>
+                            <p class="text-sm text-gray-500 mb-2">حالة البث المباشر</p>
+                            <p id="familyRealtimeStatus" class="font-bold text-lg">جاري الاتصال...</p>
+                            <p id="familyLastReceivedAt" class="text-sm text-gray-500 mt-2">آخر تحديث: --</p>
+                        </div>
+                        <span id="familyRealtimeBadge" class="inline-flex items-center justify-center px-4 py-2 rounded-full text-sm font-semibold bg-gray-100 text-gray-700">جاري الاتصال...</span>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+                        <div class="bg-gray-50 p-4 rounded-2xl">
+                            <p class="text-xs text-gray-500">أحدث تنبيه</p>
+                            <p id="familyLatestAlert" class="font-bold text-sm mt-1">لا توجد تنبيهات</p>
+                        </div>
+                        <div class="bg-gray-50 p-4 rounded-2xl">
+                            <p class="text-xs text-gray-500">المرضى المتابعين</p>
+                            <p class="font-bold text-sm mt-1">{{ $patients->count() }}</p>
+                        </div>
+                        <div class="bg-gray-50 p-4 rounded-2xl">
+                            <p class="text-xs text-gray-500">آخر قراءة للأجهزة</p>
+                            <p id="familyLatestReading" class="font-bold text-sm mt-1">--</p>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Pending Requests Section -->
                 <div class="mb-6">
                     <h3 class="text-lg font-bold mb-4">
@@ -98,29 +124,48 @@
                     </h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
                         @forelse($patients as $patient)
-                            <div class="bg-white p-6 rounded-lg shadow-md border-t-4 {{ $patient['status'] === 'alert' ? 'border-red-500' : 'border-green-500' }}">
+                            <div id="patientCard-{{ $patient['id'] }}" class="bg-white p-6 rounded-lg shadow-md border-t-4 {{ $patient['status'] === 'alert' ? 'border-red-500' : 'border-green-500' }}">
                                 <div class="flex items-center gap-4 mb-4">
                                     <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
                                         <i class="fas fa-user text-blue-600 text-lg"></i>
                                     </div>
-                                    <div>
+                                    <div class="flex-1">
                                         <h4 class="font-bold">{{ $patient['name'] }}</h4>
                                         <p class="text-sm text-gray-500">{{ $patient['phone'] }}</p>
-                        @if(!empty($patient['email']))
-                            <p class="text-sm text-gray-500">{{ $patient['email'] }}</p>
-                        @endif
+                                        @if(!empty($patient['email']))
+                                            <p class="text-sm text-gray-500">{{ $patient['email'] }}</p>
+                                        @endif
+                                    </div>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="flex justify-between items-center p-2 bg-gray-50 rounded">
+                                        <span class="text-sm text-gray-600">الحالة</span>
+                                        <span id="patientStatus-{{ $patient['id'] }}" class="text-sm font-semibold {{ $patient['status'] === 'alert' ? 'text-red-600' : 'text-green-600' }}">
                                             {{ $patient['status'] === 'alert' ? '⚠️ تحذير' : '✓ مستقر' }}
                                         </span>
                                     </div>
 
                                     <div class="flex justify-between items-center p-2 bg-gray-50 rounded">
-                                        <span class="text-sm text-gray-600">آخر تحديث:</span>
-                                        <span class="text-sm">{{ $patient['last_update'] }}</span>
+                                        <span class="text-sm text-gray-600">آخر تحديث</span>
+                                        <span id="patientLastUpdate-{{ $patient['id'] }}" class="text-sm">{{ $patient['last_update'] }}</span>
                                     </div>
 
                                     <div class="flex justify-between items-center p-2 bg-gray-50 rounded">
-                                        <span class="text-sm text-gray-600">نوبات:</span>
+                                        <span class="text-sm text-gray-600">آخر قراءة</span>
+                                        <span id="patientLatestReading-{{ $patient['id'] }}" class="text-sm font-semibold text-blue-600">{{ $patient['latest_reading'] }}</span>
+                                    </div>
+
+                                    <div class="flex justify-between items-center p-2 bg-gray-50 rounded">
+                                        <span class="text-sm text-gray-600">نوبات</span>
                                         <span class="text-sm font-bold text-red-600">{{ $patient['active_seizures'] }}</span>
+                                    </div>
+
+                                    <div class="p-2 bg-gray-50 rounded">
+                                        <p class="text-xs text-gray-500 mb-1">تنبيه فوري</p>
+                                        <p id="patientAlertText-{{ $patient['id'] }}" class="text-sm font-semibold {{ $patient['status'] === 'alert' ? 'text-red-600' : 'text-gray-700' }}">
+                                            {{ $patient['status'] === 'alert' ? 'تنبيه نشط' : 'لا توجد تنبيهات حالية' }}
+                                        </p>
                                     </div>
                                 </div>
 
@@ -169,31 +214,25 @@
                         <h3 class="text-lg font-bold mb-4"><i class="fas fa-heart-pulse text-danger"></i> مراقبة الحالة الحالية</h3>
                         <div class="space-y-4">
                             @forelse($patients as $patient)
-                                <div class="flex items-center justify-between p-4 border rounded-lg hover:shadow-md transition">
+                                <div id="monitoringPatientRow-{{ $patient['id'] }}" class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 p-4 border rounded-lg hover:shadow-md transition">
                                     <div class="flex items-center gap-4 flex-1">
                                         <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">
                                             {{ substr($patient['name'], 0, 1) }}
                                         </div>
                                         <div class="flex-1">
                                             <h4 class="font-bold text-lg">{{ $patient['name'] }}</h4>
-                                            <p class="text-sm text-gray-500">آخر تحديث: {{ $patient['last_update'] }}</p>
+                                            <p id="monitoringPatientUpdate-{{ $patient['id'] }}" class="text-sm text-gray-500">آخر تحديث: {{ $patient['last_update'] }}</p>
+                                            <p id="monitoringPatientReading-{{ $patient['id'] }}" class="text-sm text-blue-600 mt-1">آخر قراءة: {{ $patient['latest_reading'] }}</p>
                                         </div>
                                     </div>
                                     <div class="text-right">
-                                        @if($patient['active_seizures'])
-                                            <div class="mb-2">
-                                                <span class="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-bold animate-pulse">
-                                                    <i class="fas fa-exclamation-triangle"></i> تنبيه نشط
-                                                </span>
-                                            </div>
-                                        @else
-                                            <div class="mb-2">
-                                                <span class="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-bold">
-                                                    <i class="fas fa-check-circle"></i> مستقر
-                                                </span>
-                                            </div>
-                                        @endif
-                                        <div class="flex gap-2">
+                                        <div class="mb-2">
+                                            <span id="monitoringPatientStatus-{{ $patient['id'] }}" class="px-3 py-1 rounded-full text-sm font-bold {{ $patient['status'] === 'alert' ? 'bg-red-100 text-red-800 animate-pulse' : 'bg-green-100 text-green-800' }}">
+                                                <i class="fas {{ $patient['status'] === 'alert' ? 'fa-exclamation-triangle' : 'fa-check-circle' }}"></i>
+                                                {{ $patient['status'] === 'alert' ? 'تنبيه نشط' : 'مستقر' }}
+                                            </span>
+                                        </div>
+                                        <div class="flex gap-2 justify-end">
                                             <button class="text-blue-600 hover:underline text-xs" onclick="viewFamilyPatientDetails({{ $patient['id'] }})">
                                                 <i class="fas fa-eye"></i> التفاصيل
                                             </button>
@@ -756,6 +795,216 @@
 
             function saveNotificationSettings() {
                 alert('تم حفظ الإعدادات بنجاح');
+            }
+        </script>
+
+        @php
+            $reverbHost = config('broadcasting.connections.reverb.host', request()->getHost());
+            $reverbPort = (int) config('broadcasting.connections.reverb.port', 6001);
+            $reverbScheme = config('broadcasting.connections.reverb.scheme', request()->getScheme());
+            $reverbUseTls = config('broadcasting.connections.reverb.useTLS', $reverbScheme === 'https') ? 'true' : 'false';
+            $reverbKey = config('broadcasting.connections.reverb.key');
+        @endphp
+
+        <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/laravel-echo@1.15.3/dist/echo.iife.js"></script>
+        <script>
+            if (typeof window.Echo === 'undefined' && typeof Echo !== 'undefined') {
+                window.Echo = new Echo({
+                    broadcaster: 'pusher',
+                    key: '{{ $reverbKey }}',
+                    wsHost: '{{ $reverbHost }}',
+                    wsPort: {{ $reverbPort }},
+                    wssPort: {{ $reverbPort }},
+                    forceTLS: {{ $reverbUseTls }},
+                    enabledTransports: ['ws', 'wss'],
+                    disableStats: true,
+                    authEndpoint: '/broadcasting/auth',
+                });
+            }
+        </script>
+
+        <script>
+            const familyRealtimePatients = @json($patients);
+            const familyRealtimeUserId = {{ auth()->id() }};
+            const familyRealtimeBadge = document.getElementById('familyRealtimeBadge');
+            const familyRealtimeStatus = document.getElementById('familyRealtimeStatus');
+            const familyLastReceivedAt = document.getElementById('familyLastReceivedAt');
+            const familyLatestAlert = document.getElementById('familyLatestAlert');
+            const familyLatestReading = document.getElementById('familyLatestReading');
+
+            const initialFamilyReading = familyRealtimePatients.find((patient) => patient?.latest_reading)?.latest_reading || 'لا توجد قراءة حديثة';
+            if (familyLatestReading) {
+                familyLatestReading.textContent = initialFamilyReading;
+            }
+
+            function formatFamilyTimestamp(value) {
+                if (!value) return '--';
+                if (typeof value === 'string' && /ago|قبل|منذ/.test(value)) return value;
+                const parsed = new Date(value);
+                if (Number.isNaN(parsed.getTime())) return value;
+                return parsed.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            }
+
+            function familyReadingText(payload) {
+                const eventData = payload?.data || payload || {};
+                const vital = eventData.vital_sign || {};
+                const parts = [];
+
+                if (vital.heart_rate) parts.push(`معدل النبض ${vital.heart_rate}`);
+                if (vital.oxygen_level) parts.push(`تشبع الأكسجين ${vital.oxygen_level}%`);
+                if (vital.temperature) parts.push(`الحرارة ${vital.temperature}°C`);
+                if (vital.eeg_signal) parts.push(`EEG ${vital.eeg_signal}`);
+                if (vital.emg_signal) parts.push(`EMG ${vital.emg_signal}`);
+
+                if (!parts.length && typeof payload === 'string') {
+                    return payload;
+                }
+
+                return parts.length ? parts.join(' • ') : 'لا توجد قراءة حديثة';
+            }
+
+            function familyAlertLevel(payload) {
+                const eventData = payload?.data || payload || {};
+                const analysis = eventData.analysis || {};
+                if (analysis.seizure_detected || analysis.alert_level === 'emergency') return 'danger';
+                if (analysis.alert_level === 'warning' || Number(analysis.prediction_score) >= 0.65) return 'warning';
+                return 'info';
+            }
+
+            function familyAlertMessage(payload) {
+                const eventData = payload?.data || payload || {};
+                const analysis = eventData.analysis || {};
+
+                if (analysis.seizure_detected || analysis.alert_level === 'emergency') {
+                    return 'تنبيه طارئ: احتمال نوبة عالية';
+                }
+
+                if (analysis.alert_level === 'warning' || Number(analysis.prediction_score) >= 0.65) {
+                    return 'تنبيه تحذيري: راقب الحالة عن كثب';
+                }
+
+                return 'تحديث طبي جديد تم استلامه';
+            }
+
+            function familyStatusText(payload) {
+                const level = familyAlertLevel(payload);
+                return level === 'danger' ? '⚠️ تحذير' : '✓ مستقر';
+            }
+
+            function setFamilyRealtimeState(status, label) {
+                if (!familyRealtimeBadge || !familyRealtimeStatus) return;
+                familyRealtimeBadge.textContent = label;
+                familyRealtimeBadge.className = 'inline-flex items-center justify-center px-4 py-2 rounded-full text-sm font-semibold';
+                if (status === 'connected') {
+                    familyRealtimeBadge.classList.add('bg-emerald-100', 'text-emerald-700');
+                } else if (status === 'warning') {
+                    familyRealtimeBadge.classList.add('bg-amber-100', 'text-amber-700');
+                } else {
+                    familyRealtimeBadge.classList.add('bg-rose-100', 'text-rose-700');
+                }
+                familyRealtimeStatus.textContent = label;
+            }
+
+            function updateFamilyPatientUI(patientId, payload) {
+                const eventData = payload?.data || payload || {};
+                const timestamp = eventData.timestamp || new Date().toISOString();
+                const reading = familyReadingText(payload);
+                const statusText = familyStatusText(payload);
+                const statusClass = familyAlertLevel(payload) === 'danger' ? 'text-red-600' : 'text-green-600';
+                const alertClass = familyAlertLevel(payload) === 'danger' ? 'text-red-600' : 'text-gray-700';
+
+                const statusEl = document.getElementById(`patientStatus-${patientId}`);
+                const updateEl = document.getElementById(`patientLastUpdate-${patientId}`);
+                const readingEl = document.getElementById(`patientLatestReading-${patientId}`);
+                const alertEl = document.getElementById(`patientAlertText-${patientId}`);
+                const cardEl = document.getElementById(`patientCard-${patientId}`);
+                const monitoringStatusEl = document.getElementById(`monitoringPatientStatus-${patientId}`);
+                const monitoringUpdateEl = document.getElementById(`monitoringPatientUpdate-${patientId}`);
+                const monitoringReadingEl = document.getElementById(`monitoringPatientReading-${patientId}`);
+
+                if (statusEl) {
+                    statusEl.textContent = statusText;
+                    statusEl.className = 'text-sm font-semibold';
+                    statusEl.classList.add(statusClass);
+                }
+
+                if (updateEl) updateEl.textContent = formatFamilyTimestamp(timestamp);
+                if (readingEl) readingEl.textContent = reading;
+                if (alertEl) {
+                    alertEl.textContent = familyAlertMessage(payload);
+                    alertEl.className = 'text-sm font-semibold';
+                    alertEl.classList.add(alertClass);
+                }
+
+                if (cardEl) {
+                    cardEl.className = cardEl.className.replace(/border-(red|green)-500/g, '').trim();
+                    cardEl.classList.add(familyAlertLevel(payload) === 'danger' ? 'border-red-500' : 'border-green-500');
+                }
+
+                if (monitoringStatusEl) {
+                    monitoringStatusEl.textContent = familyAlertLevel(payload) === 'danger' ? 'تنبيه نشط' : 'مستقر';
+                    monitoringStatusEl.className = 'px-3 py-1 rounded-full text-sm font-bold';
+                    if (familyAlertLevel(payload) === 'danger') {
+                        monitoringStatusEl.classList.add('bg-red-100', 'text-red-800', 'animate-pulse');
+                    } else {
+                        monitoringStatusEl.classList.add('bg-green-100', 'text-green-800');
+                    }
+                }
+
+                if (monitoringUpdateEl) monitoringUpdateEl.textContent = `آخر تحديث: ${formatFamilyTimestamp(timestamp)}`;
+                if (monitoringReadingEl) monitoringReadingEl.textContent = `آخر قراءة: ${reading}`;
+
+                if (familyLatestAlert) familyLatestAlert.textContent = familyAlertMessage(payload);
+                if (familyLatestReading) familyLatestReading.textContent = reading;
+                if (familyLastReceivedAt) familyLastReceivedAt.textContent = `آخر تحديث: ${formatFamilyTimestamp(timestamp)}`;
+            }
+
+            function prependRealtimeNotification(patientName, payload) {
+                const notificationsContainer = document.getElementById('notificationsContainer');
+                if (!notificationsContainer) return;
+
+                const alertLevel = familyAlertLevel(payload);
+                const title = alertLevel === 'danger' ? 'تنبيه طارئ' : 'تحديث طبي';
+                const colorClass = alertLevel === 'danger' ? 'border-red-500 bg-red-50 text-red-800' : 'border-orange-500 bg-orange-50 text-orange-800';
+
+                const notification = document.createElement('div');
+                notification.className = `border-l-4 ${colorClass} p-4 rounded-lg`;
+                notification.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <i class="fas ${alertLevel === 'danger' ? 'fa-exclamation-circle text-red-600' : 'fa-bell text-orange-600'} text-lg"></i>
+                        <div class="flex-1">
+                            <h5 class="font-bold">${title}</h5>
+                            <p class="text-sm">${patientName} - ${familyAlertMessage(payload)}</p>
+                            <p class="text-xs mt-1">${formatFamilyTimestamp(payload?.data?.timestamp || new Date().toISOString())}</p>
+                        </div>
+                    </div>
+                `;
+
+                notificationsContainer.prepend(notification);
+            }
+
+            if (window.Echo) {
+                setFamilyRealtimeState('connected', 'متصل');
+
+                familyRealtimePatients.forEach((patient) => {
+                    if (!patient?.id) return;
+
+                    const channel = window.Echo.private(`family.${patient.id}`);
+                    channel.listen('MedicalDataUpdated', (event) => {
+                        setFamilyRealtimeState('connected', 'متصل');
+                        updateFamilyPatientUI(patient.id, event);
+                        prependRealtimeNotification(patient.name, event);
+                    });
+                });
+
+                const connector = window.Echo.connector;
+                if (connector && connector.socket && connector.socket.on) {
+                    connector.socket.on('connect', () => setFamilyRealtimeState('connected', 'متصل'));
+                    connector.socket.on('disconnect', () => setFamilyRealtimeState('warning', 'إعادة الاتصال...'));
+                }
+            } else {
+                setFamilyRealtimeState('warning', 'إعادة الاتصال...');
             }
         </script>
     </div>

@@ -1,0 +1,17 @@
+{
+  "name": "sanadk-device-manager",
+  "version": "0.1.0",
+  "description": "Local BLE bridge that connects to Polar H9 and forwards data to SANADK via Socket.IO/REST",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "SANADK",
+  "license": "MIT",
+  "dependencies": {
+    "@abandonware/noble": "^1.9.2-15",
+    "socket.io-client": "^4.7.2",
+    "node-fetch": "^2.6.7",
+    "dotenv": "^16.0.3"
+  }
+}

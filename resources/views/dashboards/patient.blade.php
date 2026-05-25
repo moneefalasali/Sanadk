@@ -29,6 +29,30 @@
             </div>
         </div>
 
+        <div class="card-modern mb-4">
+            <div class="d-flex justify-content-between align-items-center gap-3 mb-3">
+                <div>
+                    <h3 class="h6 fw-bold mb-1">حالة الوقت الحقيقي</h3>
+                    <p class="small text-muted mb-0">البث المباشر عبر WebSocket</p>
+                </div>
+                <span id="connectionBadge" class="badge rounded-pill bg-secondary p-2">جاري الاتصال...</span>
+            </div>
+            <div class="row g-3">
+                <div class="col-12 col-md-6">
+                    <div class="bg-white rounded-4 shadow-sm p-3">
+                        <p class="small text-muted mb-1">حالة EEG</p>
+                        <p id="eegStatus" class="fw-bold mb-0">غير معروف</p>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6">
+                    <div class="bg-white rounded-4 shadow-sm p-3">
+                        <p class="small text-muted mb-1">آخر تحديث</p>
+                        <p id="lastReceivedAt" class="fw-bold mb-0">--</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Summary Stats -->
         <div class="mb-4">
             <h3 class="h6 fw-bold mb-3">ملخص الحالة السريعة</h3>
@@ -397,6 +421,10 @@
     </form>
 
     <script>
+        const patientId = {{ auth()->id() }};
+        const appDebug = {{ config('app.debug') ? 'true' : 'false' }};
+        const cacheKey = `patient_${patientId}_realtime`;
+
         let deferredPrompt;
         const installBanner = document.getElementById('install-banner');
         const installButton = document.getElementById('install-button');
@@ -421,26 +449,6 @@
         function triggerEmergency() {
             if (confirm('هل أنت متأكد من إرسال تنبيه الطوارئ؟')) {
                 document.getElementById('emergency-form').submit();
-            }
-        }
-
-        // Live device data update function
-        async function fetchLiveDeviceData() {
-            try {
-                const response = await fetch('{{ route("devices.live-data") }}', { cache: 'no-store' });
-                const data = await response.json();
-
-                if (data.success) {
-                    const risk = calculateRiskScoreFromLive(data);
-                    updateRiskCard(risk);
-
-                    document.getElementById('liveHeartRate').textContent = data.heart_rate || '--';
-                    document.getElementById('liveStressLevel').textContent = calculateStressLabel(data.heart_rate);
-                    document.getElementById('liveActivityLevel').textContent = calculateActivityLabel(data.muscle_tension);
-                    updateDeviceDisplay(data);
-                }
-            } catch (error) {
-                console.error('Error updating live data:', error);
             }
         }
 
@@ -489,6 +497,7 @@
             const label = getRiskLabel(score);
             document.getElementById('riskScoreValue').textContent = score;
             document.getElementById('riskScoreLabel').textContent = label;
+            document.getElementById('riskPredictionText').classList.remove('d-none');
             document.getElementById('riskPredictionText').textContent = `احتمال حدوث نوبة خلال 30 دقيقة القادمة ${label}. يرجى أخذ احتياطاتك.`;
             document.getElementById('riskProgress').style.background = `conic-gradient(var(--primary) ${score}%, #EDF2F7 0deg)`;
         }
@@ -505,6 +514,203 @@
             if (muscleTension > 70) return 'عالي';
             if (muscleTension > 40) return 'متوسط';
             return 'منخفض';
+        }
+
+        function setConnectionStatus(status, label) {
+            const badge = document.getElementById('connectionBadge');
+            if (!badge) return;
+            badge.textContent = label;
+            badge.className = 'badge rounded-pill p-2';
+            if (status === 'connected') {
+                badge.classList.add('bg-success');
+            } else if (status === 'warning') {
+                badge.classList.add('bg-warning', 'text-dark');
+            } else {
+                badge.classList.add('bg-danger');
+            }
+        }
+
+        function formatTimestamp(date) {
+            if (!date) return '--';
+            const parsed = new Date(date);
+            if (Number.isNaN(parsed.getTime())) return '--';
+            return parsed.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        async function cacheRealtimeData(payload) {
+            try {
+                if (!window.indexedDB) {
+                    localStorage.setItem(cacheKey, JSON.stringify(payload));
+                    return;
+                }
+                const dbName = 'sanadak-patient-cache';
+                const storeName = 'patient_store';
+                const request = indexedDB.open(dbName, 1);
+                request.onupgradeneeded = () => {
+                    request.result.createObjectStore(storeName);
+                };
+                request.onsuccess = () => {
+                    const db = request.result;
+                    const tx = db.transaction(storeName, 'readwrite');
+                    tx.objectStore(storeName).put(payload, patientId);
+                };
+            } catch (error) {
+                localStorage.setItem(cacheKey, JSON.stringify(payload));
+            }
+        }
+
+        async function loadCachedRealtimeData() {
+            try {
+                if (window.indexedDB) {
+                    return new Promise((resolve) => {
+                        const dbName = 'sanadak-patient-cache';
+                        const storeName = 'patient_store';
+                        const request = indexedDB.open(dbName, 1);
+                        request.onsuccess = () => {
+                            const db = request.result;
+                            const tx = db.transaction(storeName, 'readonly');
+                            const getReq = tx.objectStore(storeName).get(patientId);
+                            getReq.onsuccess = () => resolve(getReq.result || null);
+                            getReq.onerror = () => resolve(null);
+                        };
+                        request.onerror = () => resolve(null);
+                    });
+                }
+                return JSON.parse(localStorage.getItem(cacheKey) || 'null');
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function normalizeRealtimeData(payload) {
+            const eventData = payload?.data || payload || {};
+            const vital = eventData.vital_sign || {};
+            const analysis = eventData.analysis || {};
+            const data = {
+                heart_rate: vital.heart_rate,
+                blood_pressure_systolic: vital.blood_pressure?.split('/')?.[0] || vital.systolic || vital.blood_pressure_systolic,
+                blood_pressure_diastolic: vital.blood_pressure?.split('/')?.[1] || vital.diastolic || vital.blood_pressure_diastolic,
+                muscle_tension: vital.muscle_tension,
+                nerve_signals: vital.nerve_signals,
+                brain_alpha: vital.brain_alpha,
+                brain_beta: vital.brain_beta,
+                brain_activity: eventData.eeg_status || vital.brain_activity,
+                oxygen_level: vital.oxygen_level,
+                temperature: vital.temperature,
+                last_updated: eventData.timestamp || new Date().toISOString(),
+                analysis,
+                eeg_status: eventData.eeg_status || 'غير معروف',
+            };
+            if (eventData.eeg_wave && typeof eventData.eeg_wave === 'object') {
+                const eegValues = Object.values(eventData.eeg_wave).map(Number).filter(Number.isFinite);
+                if (eegValues.length) {
+                    const alphaChunk = eegValues.slice(0, 2);
+                    const betaChunk = eegValues.slice(2);
+                    data.brain_alpha = Math.round(alphaChunk.reduce((a,b)=>a+b,0) / Math.max(alphaChunk.length, 1));
+                    data.brain_beta = Math.round(betaChunk.reduce((a,b)=>a+b,0) / Math.max(betaChunk.length, 1));
+                }
+            }
+            return data;
+        }
+
+        function applyRealtimeData(payload) {
+            const normalized = normalizeRealtimeData(payload);
+            const riskScore = normalized.analysis?.risk_score !== undefined
+                ? Math.round(Number(normalized.analysis.risk_score) * 100)
+                : calculateRiskScoreFromLive(normalized);
+
+            updateRiskCard(riskScore);
+            document.getElementById('liveHeartRate').textContent = normalized.heart_rate || '--';
+            document.getElementById('liveStressLevel').textContent = calculateStressLabel(normalized.heart_rate);
+            document.getElementById('liveActivityLevel').textContent = calculateActivityLabel(normalized.muscle_tension);
+            document.getElementById('eegStatus').textContent = normalized.eeg_status || 'غير معروف';
+            document.getElementById('lastReceivedAt').textContent = formatTimestamp(normalized.last_updated);
+            document.getElementById('deviceStatus').textContent = 'متصل';
+            document.getElementById('deviceStatus').className = 'badge rounded-pill bg-success p-2';
+            updateDeviceDisplay(normalized);
+
+            if (appDebug) {
+                console.log('Realtime payload received:', payload);
+            }
+        }
+
+        // Live device data update function
+        async function fetchLiveDeviceData() {
+            try {
+                const response = await fetch('{{ route("devices.live-data") }}', { cache: 'no-store' });
+                const data = await response.json();
+
+                if (data.success) {
+                    const normalized = {
+                        heart_rate: data.heart_rate,
+                        blood_pressure_systolic: data.blood_pressure_systolic,
+                        blood_pressure_diastolic: data.blood_pressure_diastolic,
+                        muscle_tension: data.muscle_tension,
+                        nerve_signals: data.nerve_signals,
+                        brain_alpha: data.brain_alpha,
+                        brain_beta: data.brain_beta,
+                        brain_activity: data.brain_activity,
+                        oxygen_level: data.oxygen_level,
+                        temperature: data.temperature,
+                        last_updated: data.last_updated,
+                    };
+                    document.getElementById('liveHeartRate').textContent = data.heart_rate || '--';
+                    document.getElementById('liveStressLevel').textContent = calculateStressLabel(data.heart_rate);
+                    document.getElementById('liveActivityLevel').textContent = calculateActivityLabel(data.muscle_tension);
+                    document.getElementById('eegStatus').textContent = data.brain_activity || 'غير معروف';
+                    document.getElementById('lastReceivedAt').textContent = formatTimestamp(data.last_updated);
+                    document.getElementById('deviceStatus').textContent = 'متصل';
+                    document.getElementById('deviceStatus').className = 'badge rounded-pill bg-success p-2';
+                    updateDeviceDisplay(normalized);
+                    setConnectionStatus('connected', 'متصل');
+                    updateRiskCard(calculateRiskScoreFromLive(normalized));
+                }
+            } catch (error) {
+                console.error('Error updating live data:', error);
+            }
+        }
+
+        function subscribeRealtime() {
+            if (!window.Echo) {
+                setConnectionStatus('warning', 'إعادة الاتصال...');
+                setTimeout(subscribeRealtime, 1500);
+                return;
+            }
+
+            try {
+                const channel = window.Echo.private(`patient.${patientId}`);
+                channel.listen('MedicalDataUpdated', (event) => {
+                    setConnectionStatus('connected', 'متصل');
+                    const payload = event?.data || event;
+                    cacheRealtimeData({ payload, receivedAt: new Date().toISOString() });
+                    applyRealtimeData(payload);
+                    if (appDebug) {
+                        console.log('MedicalDataUpdated received:', payload);
+                    }
+                });
+
+                const connector = window.Echo.connector;
+                if (connector && connector.socket && connector.socket.on) {
+                    connector.socket.on('connect', () => {
+                        setConnectionStatus('connected', 'متصل');
+                    });
+                    connector.socket.on('disconnect', () => {
+                        setConnectionStatus('warning', 'إعادة الاتصال...');
+                    });
+                }
+            } catch (error) {
+                console.error('Echo subscribe error:', error);
+                setConnectionStatus('warning', 'إعادة الاتصال...');
+            }
+        }
+
+        async function initializeRealtime() {
+            const cached = await loadCachedRealtimeData();
+            if (cached?.payload) {
+                applyRealtimeData(cached.payload);
+            }
+            fetchLiveDeviceData();
+            subscribeRealtime();
         }
 
         // AI Analysis functionality
@@ -542,20 +748,16 @@
         });
 
         function displayAnalysisResults(data) {
-            // Update activity and risk level
             document.getElementById('currentActivity').textContent = getActivityText(data.activity);
             document.getElementById('riskLevel').textContent = getRiskText(data.risk_level) + ` (${Math.round(data.probability * 100)}%)`;
 
-            // Update time to event
             document.getElementById('timeToEvent').textContent = data.time_to_event || 'غير محدد';
 
-            // Show risk prediction text based on analysis
             const riskPredictionText = document.getElementById('riskPredictionText');
             riskPredictionText.classList.remove('d-none');
             const timeText = data.time_to_event ? `خلال ${data.time_to_event}` : 'في وقت غير محدد';
             riskPredictionText.textContent = `احتمال حدوث نوبة ${timeText}. ${getRiskText(data.risk_level)}. يرجى أخذ احتياطاتك.`;
 
-            // Show recommendations
             const recommendationsDiv = document.getElementById('recommendations');
             const recommendationsList = document.getElementById('recommendationsList');
 
@@ -566,13 +768,11 @@
                 recommendationsDiv.classList.remove('d-none');
             }
 
-            // Show emergency info if high risk
             const emergencyInfo = document.getElementById('emergencyInfo');
             if (data.emergency_trigger) {
                 emergencyInfo.classList.remove('d-none');
             }
 
-            // Show AI explanation if available
             if (data.ai_explanation) {
                 const explanationDiv = document.createElement('div');
                 explanationDiv.className = 'mt-3 p-3 bg-light rounded-3';
@@ -659,7 +859,7 @@
             document.getElementById('brainBeta').textContent = data.brain_beta || data.brain_activity || '--';
 
             if (data.last_updated) {
-                document.getElementById('lastUpdate').textContent = 'الآن';
+                document.getElementById('lastUpdate').textContent = formatTimestamp(data.last_updated);
             }
 
             const hasData = data.heart_rate || data.muscle_tension || data.brain_alpha || data.brain_beta || data.brain_activity;
@@ -694,10 +894,32 @@
             }
         });
 
-        // Update live data every 30 seconds
-        setInterval(fetchLiveDeviceData, 30000);
+        initializeRealtime();
+    </script>
 
-        // Initial live load
-        fetchLiveDeviceData();
+    @php
+        $reverbHost = config('broadcasting.connections.reverb.host', request()->getHost());
+        $reverbPort = (int) config('broadcasting.connections.reverb.port', 6001);
+        $reverbScheme = config('broadcasting.connections.reverb.scheme', request()->getScheme());
+        $reverbUseTls = config('broadcasting.connections.reverb.useTLS', $reverbScheme === 'https') ? 'true' : 'false';
+        $reverbKey = config('broadcasting.connections.reverb.key');
+    @endphp
+
+    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/laravel-echo@1.15.3/dist/echo.iife.js"></script>
+    <script>
+        if (typeof window.Echo === 'undefined' && typeof Echo !== 'undefined') {
+            window.Echo = new Echo({
+                broadcaster: 'pusher',
+                key: '{{ $reverbKey }}',
+                wsHost: '{{ $reverbHost }}',
+                wsPort: {{ $reverbPort }},
+                wssPort: {{ $reverbPort }},
+                forceTLS: {{ $reverbUseTls }},
+                enabledTransports: ['ws', 'wss'],
+                disableStats: true,
+                authEndpoint: '/broadcasting/auth',
+            });
+        }
     </script>
 </x-app-layout>

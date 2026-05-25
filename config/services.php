@@ -36,4 +36,10 @@ return [
         'model' => env('OPENAI_MODEL', 'gpt-4'),
     ],
 
+    'polar' => [
+        'client_id' => env('POLAR_CLIENT_ID'),
+        'client_secret' => env('POLAR_CLIENT_SECRET'),
+        'redirect' => env('POLAR_REDIRECT_URI'),
+    ],
+
 ];

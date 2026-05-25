@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use App\Models\Seizure;
 use App\Models\VitalSign;
 use App\Models\User;
@@ -12,6 +13,8 @@ use App\Models\Device;
 use App\Models\DailyEntry;
 use App\Models\AppNotification;
 use App\Models\EmergencyContact;
+use App\Models\PatientDoctor;
+use App\Services\PolarAccessLinkService;
 use App\Services\SeizurePrediction;
 
 class DashboardController extends Controller
@@ -397,35 +400,181 @@ class DashboardController extends Controller
 
     public function getDeviceData(Request $request)
     {
-        $request->validate([
-            'device_id' => 'required|exists:devices,id',
-        ]);
+        // Support getting device id from route parameter or request body
+        $deviceId = $request->route('device') ?? $request->input('device_id');
 
-        $device = Device::where('id', $request->device_id)
-            ->where('user_id', Auth::id())
-            ->firstOrFail();
-
-        // Generate new simulated data if in simulation mode
-        if ($device->simulation_mode) {
-            $device->generateSimulatedData();
-            $device->refresh();
+        if (! $deviceId) {
+            return response()->json(["success" => false, "message" => 'لم يتم تحديد معرف الجهاز.'], 400);
         }
 
-        $data = $device->getLastDataAttribute();
+        $device = Device::where('id', $deviceId)
+            ->where('user_id', Auth::id())
+            ->first();
 
-        return response()->json([
-            'success' => true,
-            'device' => [
-                'id' => $device->id,
-                'name' => $device->name,
-                'type' => $device->type,
-                'status' => $device->status,
-                'battery_level' => $device->battery_level,
-                'simulation_mode' => $device->simulation_mode,
-                'last_updated' => $device->updated_at->diffForHumans()
-            ],
-            'data' => $data
-        ]);
+        if (! $device) {
+            return response()->json(["success" => false, "message" => 'لم يتم العثور على الجهاز أو ليس لديك صلاحية الوصول إليه.'], 404);
+        }
+
+        try {
+            // Generate new simulated data if in simulation mode
+            if ($device->simulation_mode) {
+                $device->generateSimulatedData();
+                $device->refresh();
+            }
+
+            $data = $device->getLastDataAttribute();
+
+            return response()->json([
+                'success' => true,
+                'device' => [
+                    'id' => $device->id,
+                    'name' => $device->name,
+                    'type' => $device->type,
+                    'status' => $device->status,
+                    'battery_level' => $device->battery_level,
+                    'simulation_mode' => $device->simulation_mode,
+                    'last_updated' => $device->updated_at->diffForHumans()
+                ],
+                'data' => $data
+            ]);
+        } catch (\Exception $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'حدث خطأ داخلي أثناء جلب بيانات الجهاز.'], 500);
+        }
+    }
+
+    /**
+     * Receive device data posted by an external bridge (DeviceManager).
+     * Expected: POST /api/devices/{device}/data
+     */
+    public function receiveDeviceData(Request $request)
+    {
+        $incomingToken = $request->bearerToken();
+        $expected = env('SANADK_INCOMING_TOKEN') ?: env('SANADK_API_TOKEN');
+
+        if ($expected && $incomingToken !== $expected) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $deviceParam = $request->route('device');
+        $payload = $request->all();
+
+        // Find device by numeric id or by name
+        $device = null;
+        if (is_numeric($deviceParam)) {
+            $device = Device::find($deviceParam);
+        }
+        if (!$device) {
+            $device = Device::where('name', $deviceParam)->first();
+        }
+
+        // If not found, optionally create if user_id provided
+        if (!$device) {
+            if (!empty($payload['user_id'])) {
+                $device = Device::create([
+                    'user_id' => $payload['user_id'],
+                    'name' => $deviceParam,
+                    'type' => $payload['type'] ?? 'ecg',
+                    'status' => 'connected',
+                    'battery_level' => $payload['battery_level'] ?? null,
+                    'simulation_mode' => false,
+                ]);
+            } else {
+                return response()->json(['success' => false, 'message' => 'Device not found and no user_id provided'], 404);
+            }
+        }
+
+        try {
+            // Remove internal fields before storing
+            $storeData = $payload;
+            unset($storeData['user_id']);
+            unset($storeData['device_id']);
+
+            $device->update([
+                'last_data' => is_array($storeData) ? json_encode($storeData) : $storeData,
+                'status' => 'connected',
+                'battery_level' => $payload['battery_level'] ?? $device->battery_level,
+            ]);
+
+            return response()->json(['success' => true, 'message' => 'Data stored']);
+        } catch (\Exception $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Internal error'], 500);
+        }
+    }
+
+    /**
+     * Receive device data posted by browser Web Bluetooth connection (authenticated session).
+     */
+    public function receiveDeviceDataFromBrowser(Request $request, $device)
+    {
+        $user = Auth::user();
+
+        // Find device owned by user
+        $deviceModel = Device::where('user_id', $user->id)
+            ->where(function($q) use ($device) {
+                if (is_numeric($device)) {
+                    $q->where('id', $device);
+                } else {
+                    $q->where('name', $device);
+                }
+            })->first();
+
+        if (!$deviceModel) {
+            return response()->json(['success' => false, 'message' => 'Device not found or not authorized'], 404);
+        }
+
+        $payload = $request->all();
+
+        try {
+            $storeData = $payload;
+            $deviceModel->update([
+                'last_data' => is_array($storeData) ? json_encode($storeData) : $storeData,
+                'status' => 'connected'
+            ]);
+
+            return response()->json(['success' => true]);
+        } catch (\Exception $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Internal error'], 500);
+        }
+    }
+
+    public function connectPolar(Request $request, PolarAccessLinkService $service)
+    {
+        $state = bin2hex(random_bytes(16));
+        session(['polar_oauth_state' => $state]);
+
+        return redirect($service->authorizeUrl($state));
+    }
+
+    public function polarCallback(Request $request, PolarAccessLinkService $service)
+    {
+        if ($request->has('error')) {
+            return redirect()->route('devices')->with('error', 'فشل الاتصال بـ Polar: ' . $request->input('error_description', $request->input('error')));
+        }
+
+        if ($request->input('state') !== session('polar_oauth_state')) {
+            return redirect()->route('devices')->with('error', 'حالة المصادقة غير صحيحة. حاول مرة أخرى.');
+        }
+
+        $code = $request->input('code');
+
+        try {
+            $tokenData = $service->exchangeCode($code);
+            $user = Auth::user();
+            $user->update([
+                'polar_owner_id' => $tokenData['owner_id'] ?? $tokenData['user_id'] ?? null,
+                'polar_access_token' => $tokenData['access_token'] ?? null,
+                'polar_refresh_token' => $tokenData['refresh_token'] ?? null,
+                'polar_token_expires_at' => isset($tokenData['expires_in']) ? now()->addSeconds($tokenData['expires_in']) : null,
+            ]);
+
+            return redirect()->route('devices')->with('success', 'تم ربط حساب Polar بنجاح. سيتم عرض البيانات عند تحديثها.');
+        } catch (\Exception $e) {
+            report($e);
+            return redirect()->route('devices')->with('error', 'حدث خطأ أثناء استكمال الربط مع Polar.');
+        }
     }
 
     /**
@@ -677,6 +826,13 @@ class DashboardController extends Controller
 
                     $latestSeizure = $patient->seizures->sortByDesc('start_time')->first();
                     $latestVital = $patient->vitalSigns->sortByDesc('created_at')->first();
+                    $latestReadingParts = array_filter([
+                        $latestVital?->heart_rate ? 'معدل النبض ' . $latestVital->heart_rate : null,
+                        $latestVital?->oxygen_level ? 'تشبع الأكسجين ' . $latestVital->oxygen_level . '%' : null,
+                        $latestVital?->temperature ? 'الحرارة ' . $latestVital->temperature . '°C' : null,
+                        $latestVital?->eeg_signal ? 'EEG ' . $latestVital->eeg_signal : null,
+                        $latestVital?->emg_signal ? 'EMG ' . $latestVital->emg_signal : null,
+                    ]);
 
                     return [
                         'id' => $patient->id,
@@ -689,6 +845,7 @@ class DashboardController extends Controller
                         'longitude' => $latestSeizure?->longitude,
                         'status' => $patient->seizures->whereNull('end_time')->count() ? 'alert' : 'stable',
                         'last_update' => $latestVital?->created_at->diffForHumans() ?? 'لا يوجد',
+                        'latest_reading' => !empty($latestReadingParts) ? implode(' • ', $latestReadingParts) : 'لا توجد قراءة حديثة',
                         'active_seizures' => $patient->seizures->whereNull('end_time')->count(),
                         'seizures' => $patient->seizures,
                     ];
@@ -849,6 +1006,105 @@ class DashboardController extends Controller
         }
 
         return view('dashboards.doctor', compact('patients', 'predictionRate', 'avgSeizureDuration', 'availableDoctors', 'linkedDoctors', 'activeSeizureCount', 'linkedDoctorsCount', 'totalSeizures', 'activePatientCount'));
+    }
+
+    public function doctorMonitor(?User $patient = null)
+    {
+        $user = Auth::user();
+
+        if (!$user || $user->role !== 'doctor') {
+            return redirect()->route('dashboard');
+        }
+
+        $patients = $user->patients()
+            ->with(['vitalSigns' => fn($query) => $query->latest()->take(1), 'seizures' => fn($query) => $query->latest()->take(5), 'devices'])
+            ->get()
+            ->map(function ($patientModel) {
+                $latestVital = $patientModel->vitalSigns->first();
+                $activeSeizure = $patientModel->seizures->firstWhere(fn($seizure) => is_null($seizure->end_time));
+
+                $patientModel->latest_vitals = $latestVital;
+                $patientModel->status_text = $activeSeizure ? 'نوبة نشطة' : 'مستقر';
+                $patientModel->high_risk = $activeSeizure || ($latestVital && ($latestVital->heart_rate ?? 0) > 100);
+
+                return $patientModel;
+            });
+
+        $currentPatient = $patient
+            ? $patients->firstWhere('id', $patient->id)
+            : $patients->first();
+
+        $currentVitals = optional($currentPatient)->latest_vitals;
+
+        $analysisRisk = $currentVitals
+            ? min(0.95, max(0.05, (($currentVitals->heart_rate ?? 72) - 60) / 180 + (($currentVitals->temperature ?? 37) - 36) * 0.03 + (($currentVitals->oxygen_level ?? 98) - 98) * -0.01))
+            : 0.15;
+
+        $analysis = (object) [
+            'risk_score' => $analysisRisk,
+            'alert_level' => optional($currentPatient)->high_risk ? 'emergency' : 'stable',
+        ];
+
+        $alerts = optional($currentPatient)->seizures?->take(5) ?? collect();
+        $activeAlertsCount = $alerts->count();
+        $predictionPercent = round($analysisRisk * 100);
+        $totalPatients = $patients->count();
+
+        return view('dashboards.doctor-medical-monitor', compact(
+            'patients',
+            'currentPatient',
+            'currentVitals',
+            'analysis',
+            'alerts',
+            'activeAlertsCount',
+            'predictionPercent',
+            'totalPatients'
+        ));
+    }
+
+    public function doctorReports()
+    {
+        $user = Auth::user();
+
+        if (!$user || $user->role !== 'doctor') {
+            return redirect()->route('dashboard');
+        }
+
+        $patients = $user->patients()
+            ->with(['vitalSigns' => fn($query) => $query->latest()->take(1), 'seizures'])
+            ->get()
+            ->map(function ($patient) {
+                $latestVital = $patient->vitalSigns->first();
+                $latestSeizure = $patient->seizures->sortByDesc('start_time')->first();
+
+                $patient->latest_vitals = $latestVital;
+                $patient->latest_seizure = $latestSeizure;
+                $patient->active_seizure = $patient->seizures->firstWhere(fn($seizure) => is_null($seizure->end_time));
+
+                return $patient;
+            });
+
+        $totalPatients = $patients->count();
+        $activePatients = $patients->filter(fn($patient) => !is_null($patient->active_seizure))->count();
+        $totalSeizures = $patients->sum(fn($patient) => $patient->seizures->count());
+        $predictedSeizures = $patients->sum(fn($patient) => $patient->seizures->where('is_predicted', true)->count());
+        $averageDuration = $patients->flatMap(fn($patient) => $patient->seizures->whereNotNull('end_time'))
+            ->map(fn($seizure) => $seizure->end_time->diffInMinutes($seizure->start_time))
+            ->avg();
+        $averageHeartRate = round($patients->flatMap(fn($patient) => $patient->vitalSigns)->avg('heart_rate') ?? 0, 1);
+        $averageOxygen = round($patients->flatMap(fn($patient) => $patient->vitalSigns)->avg('oxygen_level') ?? 0, 1);
+        $predictionRate = $totalSeizures > 0 ? round(($predictedSeizures / $totalSeizures) * 100, 1) : 0;
+
+        return view('dashboards.doctor-reports', compact(
+            'patients',
+            'totalPatients',
+            'activePatients',
+            'totalSeizures',
+            'predictionRate',
+            'averageDuration',
+            'averageHeartRate',
+            'averageOxygen'
+        ));
     }
 
     public function storeDoctorRequest(Request $request)
